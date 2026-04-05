@@ -7,6 +7,7 @@ import questionsRouter from './routes/questions.js';
 import uploadRouter from './routes/upload.js';
 import topicsRouter from './routes/topics.js';
 import voiceNotesRouter from './routes/voiceNotes.js';
+import invitationsRouter from './routes/invitations.js';
 
 const app = express();
 const port = process.env.PORT ? Number(process.env.PORT) : 3000;
@@ -23,6 +24,7 @@ app.use('/api/questions', questionsRouter);
 app.use('/api/upload', uploadRouter);
 app.use('/api/topics', topicsRouter);
 app.use('/api/voice-notes', voiceNotesRouter);
+app.use('/api/invitations', invitationsRouter);
 
 async function start() {
   try {

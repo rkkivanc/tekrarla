@@ -56,3 +56,14 @@ CREATE TABLE voice_notes (
   duration INTEGER, -- saniye cinsinden
   created_at TIMESTAMP DEFAULT NOW()
 );
+
+CREATE TABLE invitations (
+  id UUID PRIMARY KEY DEFAULT gen_random_uuid(),
+  teacher_id UUID NOT NULL REFERENCES users (id),
+  student_email VARCHAR(255) NOT NULL,
+  student_id UUID REFERENCES users (id),
+  status VARCHAR(20) NOT NULL DEFAULT 'pending',
+  created_at TIMESTAMP DEFAULT NOW(),
+  updated_at TIMESTAMP DEFAULT NOW(),
+  UNIQUE(teacher_id, student_email)
+);

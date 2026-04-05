@@ -1,15 +1,47 @@
-import { useMemo, useState, useEffect } from 'react';
+import { useMemo, useState, useEffect, useRef } from 'react';
 import { useNavigate } from 'react-router';
 import { FileQuestion, BookOpen, Mic, Clock, CheckCircle, AlertTriangle } from 'lucide-react';
 import { isDueForReview, type User } from '../store';
 import { api } from '../api';
+import { toast } from 'sonner';
+import { isAxiosError } from 'axios';
+import {
+  AlertDialog,
+  AlertDialogAction,
+  AlertDialogCancel,
+  AlertDialogContent,
+  AlertDialogDescription,
+  AlertDialogFooter,
+  AlertDialogHeader,
+  AlertDialogTitle,
+} from './ui/alert-dialog';
+import { Button } from './ui/button';
+
+type MyTeacher = { id: string; name: string; email: string };
 
 export function Dashboard() {
   const navigate = useNavigate();
   const [questions, setQuestions] = useState<any[]>([]);
   const [topics, setTopics] = useState<any[]>([]);
   const [voiceNotes, setVoiceNotes] = useState<any[]>([]);
+  const [pendingInvitations, setPendingInvitations] = useState<any[]>([]);
+  const [invitationDialog, setInvitationDialog] = useState<
+    null | { mode: 'accept' | 'reject'; id: string; teacherName: string }
+  >(null);
+  const [invitationDialogOpen, setInvitationDialogOpen] = useState(false);
+  const invitationDialogCloseTimer = useRef<ReturnType<typeof setTimeout> | null>(null);
+  const [myTeacher, setMyTeacher] = useState<MyTeacher | null>(null);
+  const [leaveClassDialogOpen, setLeaveClassDialogOpen] = useState(false);
   const [loading, setLoading] = useState(true);
+
+  function openInvitationDialog(payload: { mode: 'accept' | 'reject'; id: string; teacherName: string }) {
+    if (invitationDialogCloseTimer.current) {
+      clearTimeout(invitationDialogCloseTimer.current);
+      invitationDialogCloseTimer.current = null;
+    }
+    setInvitationDialog(payload);
+    setInvitationDialogOpen(true);
+  }
   const [user] = useState<User | null>(() => {
     const raw = localStorage.getItem('user');
     return raw ? JSON.parse(raw) : null;
@@ -28,12 +60,30 @@ export function Dashboard() {
         setQuestions(qRes.data ?? []);
         setTopics(tRes.data ?? []);
         setVoiceNotes(vRes.data ?? []);
+        try {
+          const invRes = await api.get('/invitations/incoming');
+          if (!cancelled) setPendingInvitations(invRes.data ?? []);
+        } catch {
+          if (!cancelled) setPendingInvitations([]);
+        }
+        try {
+          const teacherRes = await api.get<{ teacher: MyTeacher | null }>('/invitations/my-teacher');
+          if (!cancelled) setMyTeacher(teacherRes.data?.teacher ?? null);
+        } catch {
+          if (!cancelled) setMyTeacher(null);
+        }
       } finally {
         if (!cancelled) setLoading(false);
       }
     })();
     return () => {
       cancelled = true;
+    };
+  }, []);
+
+  useEffect(() => {
+    return () => {
+      if (invitationDialogCloseTimer.current) clearTimeout(invitationDialogCloseTimer.current);
     };
   }, []);
 
@@ -61,6 +111,39 @@ export function Dashboard() {
   }, [questions, topics, voiceNotes]);
 
   const totalDue = stats.dueQuestions + stats.dueTopics;
+
+  async function handleInvitationResponse(invitationId: string, status: 'accepted' | 'rejected') {
+    try {
+      await api.patch(`/invitations/${invitationId}`, { status });
+      setPendingInvitations(prev => prev.filter(inv => inv.id !== invitationId));
+      toast.success(status === 'accepted' ? 'Davet kabul edildi' : 'Davet reddedildi');
+      if (status === 'accepted') {
+        try {
+          const teacherRes = await api.get<{ teacher: MyTeacher | null }>('/invitations/my-teacher');
+          setMyTeacher(teacherRes.data?.teacher ?? null);
+        } catch {
+          /* ignore */
+        }
+      }
+    } catch (err) {
+      const msg = isAxiosError(err) ? (err.response?.data as { error?: string })?.error : undefined;
+      toast.error(msg ?? 'İşlem başarısız');
+    }
+  }
+
+  async function handleConfirmLeaveClass() {
+    const myId = user?.id;
+    if (!myId) return;
+    try {
+      await api.delete(`/invitations/students/${myId}`);
+      setMyTeacher(null);
+      setLeaveClassDialogOpen(false);
+      toast.success('Sınıftan ayrıldın');
+    } catch (err) {
+      const msg = isAxiosError(err) ? (err.response?.data as { error?: string })?.error : undefined;
+      toast.error(msg ?? 'İşlem başarısız');
+    }
+  }
 
   if (loading) {
     return (
@@ -90,6 +173,136 @@ export function Dashboard() {
           </div>
         </button>
       )}
+
+      {pendingInvitations.length > 0 && (
+        <div className="space-y-3">
+          <h2 className="text-lg font-semibold">Davet Bildirimleri</h2>
+          <div className="space-y-3">
+            {pendingInvitations.map((inv: any) => (
+              <div
+                key={inv.id}
+                className="bg-card rounded-xl border border-border p-4 flex flex-col gap-3 sm:flex-row sm:items-center sm:justify-between"
+              >
+                <p className="text-sm sm:text-base">
+                  <span className="font-medium">{inv.teacher_name ?? 'Öğretmen'}</span> sizi sınıfına davet etti
+                </p>
+                <div className="flex gap-2 shrink-0">
+                  <button
+                    type="button"
+                    onClick={() =>
+                      openInvitationDialog({
+                        mode: 'accept',
+                        id: inv.id,
+                        teacherName: inv.teacher_name ?? 'Öğretmen',
+                      })
+                    }
+                    className="px-4 py-2 rounded-lg bg-green-600 text-white hover:bg-green-700 transition-colors"
+                  >
+                    Kabul Et
+                  </button>
+                  <button
+                    type="button"
+                    onClick={() =>
+                      openInvitationDialog({
+                        mode: 'reject',
+                        id: inv.id,
+                        teacherName: inv.teacher_name ?? 'Öğretmen',
+                      })
+                    }
+                    className="px-4 py-2 rounded-lg bg-red-600 text-white hover:bg-red-700 transition-colors"
+                  >
+                    Reddet
+                  </button>
+                </div>
+              </div>
+            ))}
+          </div>
+        </div>
+      )}
+
+      {myTeacher && (
+        <div className="space-y-3">
+          <h2 className="text-lg font-semibold">Öğretmenim</h2>
+          <div className="bg-card rounded-xl border border-border p-4 flex flex-col gap-3 sm:flex-row sm:items-center sm:justify-between">
+            <div className="flex items-center gap-3 min-w-0">
+              <div className="w-10 h-10 rounded-full bg-slate-800 text-white flex items-center justify-center text-sm font-semibold shrink-0">
+                {(myTeacher.name || '?').charAt(0).toUpperCase()}
+              </div>
+              <div className="min-w-0">
+                <div className="font-medium truncate">{myTeacher.name || 'Öğretmen'}</div>
+                <div className="text-sm text-muted-foreground truncate">{myTeacher.email}</div>
+              </div>
+            </div>
+            <Button type="button" variant="outline" size="sm" className="shrink-0 w-full sm:w-auto" onClick={() => setLeaveClassDialogOpen(true)}>
+              Sınıftan Ayrıl
+            </Button>
+          </div>
+        </div>
+      )}
+
+      <AlertDialog
+        open={invitationDialogOpen}
+        onOpenChange={(open) => {
+          setInvitationDialogOpen(open);
+          if (!open) {
+            invitationDialogCloseTimer.current = setTimeout(() => {
+              invitationDialogCloseTimer.current = null;
+              setInvitationDialog(null);
+            }, 250);
+          }
+        }}
+      >
+        <AlertDialogContent>
+          <AlertDialogHeader>
+            <AlertDialogTitle>
+              {invitationDialog?.mode === 'accept'
+                ? 'Bu daveti kabul etmek istediğine emin misin?'
+                : 'Bu daveti reddetmek istediğine emin misin?'}
+            </AlertDialogTitle>
+            {invitationDialog?.mode === 'accept' && (
+              <AlertDialogDescription>
+                {invitationDialog.teacherName} sınıfına katılacaksın
+              </AlertDialogDescription>
+            )}
+          </AlertDialogHeader>
+          <AlertDialogFooter>
+            <AlertDialogCancel>İptal</AlertDialogCancel>
+            <AlertDialogAction
+              className={
+                invitationDialog?.mode === 'accept'
+                  ? 'bg-green-600 text-white hover:bg-green-700 focus-visible:ring-green-600'
+                  : 'bg-red-600 text-white hover:bg-red-700 focus-visible:ring-red-600'
+              }
+              onClick={() => {
+                if (!invitationDialog) return;
+                void handleInvitationResponse(
+                  invitationDialog.id,
+                  invitationDialog.mode === 'accept' ? 'accepted' : 'rejected',
+                );
+              }}
+            >
+              {invitationDialog?.mode === 'accept' ? 'Kabul Et' : 'Reddet'}
+            </AlertDialogAction>
+          </AlertDialogFooter>
+        </AlertDialogContent>
+      </AlertDialog>
+
+      <AlertDialog open={leaveClassDialogOpen} onOpenChange={setLeaveClassDialogOpen}>
+        <AlertDialogContent>
+          <AlertDialogHeader>
+            <AlertDialogTitle>Sınıftan ayrılmak istediğine emin misin?</AlertDialogTitle>
+          </AlertDialogHeader>
+          <AlertDialogFooter>
+            <AlertDialogCancel type="button">İptal</AlertDialogCancel>
+            <AlertDialogAction
+              className="bg-red-600 text-white hover:bg-red-700 focus-visible:ring-red-600"
+              onClick={() => void handleConfirmLeaveClass()}
+            >
+              Ayrıl
+            </AlertDialogAction>
+          </AlertDialogFooter>
+        </AlertDialogContent>
+      </AlertDialog>
 
       {/* Stat cards */}
       <div className="grid grid-cols-2 md:grid-cols-4 gap-3">
