@@ -1,3 +1,4 @@
+import React from 'react';
 import { useMemo, useState, useEffect, useRef } from 'react';
 import { useNavigate } from 'react-router';
 import { FileQuestion, BookOpen, Mic, Clock, CheckCircle, AlertTriangle } from 'lucide-react';

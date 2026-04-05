@@ -1,3 +1,4 @@
+import React from 'react';
 import { useState, useRef, useEffect } from 'react';
 import { Plus, X, BookOpen, Camera } from 'lucide-react';
 import type { Topic } from '../store';

@@ -1,3 +1,4 @@
+import React from 'react';
 import { useState, useRef, useEffect, useCallback } from 'react';
 import { Camera, Plus, X } from 'lucide-react';
 import imageCompression from 'browser-image-compression';

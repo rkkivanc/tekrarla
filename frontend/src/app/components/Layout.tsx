@@ -2,6 +2,15 @@ import { Outlet, useNavigate, useLocation } from 'react-router';
 import { Home, BookOpen, FileQuestion, Mic, GraduationCap, Users, LogOut } from 'lucide-react';
 import { type User } from '../store';
 import React, { useState, useEffect } from 'react';
+import {
+  AlertDialog,
+  AlertDialogAction,
+  AlertDialogCancel,
+  AlertDialogContent,
+  AlertDialogFooter,
+  AlertDialogHeader,
+  AlertDialogTitle,
+} from './ui/alert-dialog';
 
 export function Layout() {
   const navigate = useNavigate();
@@ -13,6 +22,7 @@ export function Layout() {
     return raw ? JSON.parse(raw) : null;
   });
   const [menuOpen, setMenuOpen] = useState(false);
+  const [logoutDialogOpen, setLogoutDialogOpen] = useState(false);
 
   useEffect(() => {
     if (!user) {
@@ -37,9 +47,8 @@ export function Layout() {
   }
 
   const handleLogout = () => {
-    // TODO: API call
-    // const state = getState();
-    // setState({ ...state, user: null });
+    localStorage.removeItem('token');
+    localStorage.removeItem('user');
     navigate('/login');
   };
 
@@ -54,16 +63,39 @@ export function Layout() {
             <svg width="24" height="24" viewBox="0 0 24 24" fill="none" stroke="currentColor" strokeWidth="2"><path d="M3 12h18M3 6h18M3 18h18"/></svg>
           </button>
           <h1 className="text-xl cursor-pointer" onClick={() => navigate('/')}>
-            🔄 Tekrarla
+            Tekrarla
           </h1>
         </div>
         <div className="flex items-center gap-3">
           <span className="text-sm opacity-80 hidden sm:inline">{user.name}</span>
-          <button onClick={handleLogout} className="opacity-80 hover:opacity-100" title="Çıkış">
+          <button
+            type="button"
+            onClick={() => setLogoutDialogOpen(true)}
+            className="opacity-80 hover:opacity-100"
+            title="Çıkış"
+          >
             <LogOut className="w-5 h-5" />
           </button>
         </div>
       </header>
+
+      <AlertDialog open={logoutDialogOpen} onOpenChange={setLogoutDialogOpen}>
+        <AlertDialogContent>
+          <AlertDialogHeader>
+            <AlertDialogTitle>Çıkış yapmak istediğine emin misin?</AlertDialogTitle>
+          </AlertDialogHeader>
+          <AlertDialogFooter>
+            <AlertDialogCancel type="button">İptal</AlertDialogCancel>
+            <AlertDialogAction
+              type="button"
+              className="bg-red-600 text-white hover:bg-red-700 focus-visible:ring-red-600"
+              onClick={() => handleLogout()}
+            >
+              Çıkış Yap
+            </AlertDialogAction>
+          </AlertDialogFooter>
+        </AlertDialogContent>
+      </AlertDialog>
 
       <div className="flex flex-1">
         {/* Sidebar - desktop */}

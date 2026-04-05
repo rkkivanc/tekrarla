@@ -1,3 +1,4 @@
+import React from 'react';
 import { useState, useEffect, useLayoutEffect, useRef } from 'react';
 import { Check, X, Eye, Trash2, BookOpen, FileQuestion } from 'lucide-react';
 import { isDueForReview, getNextReviewDate, type Question, type Topic } from '../store';

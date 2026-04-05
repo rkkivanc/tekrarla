@@ -24,7 +24,6 @@ export function LoginPage() {
     <div className="min-h-screen bg-background flex items-center justify-center p-4">
       <div className="w-full max-w-md">
         <div className="text-center mb-8">
-          <div className="text-5xl mb-3">🔄</div>
           <h1 className="text-3xl mb-2">Tekrarla</h1>
           <p className="text-muted-foreground">Aralıklı tekrar ile öğrenmeyi güçlendir</p>
         </div>
@@ -90,10 +89,6 @@ export function LoginPage() {
             </button>
           </p>
         </div>
-
-        <p className="text-center text-xs text-muted-foreground mt-6">
-          Verileriniz cihazınızda saklanır. Google Drive entegrasyonu yakında.
-        </p>
       </div>
     </div>
   );

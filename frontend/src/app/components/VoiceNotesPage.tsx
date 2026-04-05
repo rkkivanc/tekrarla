@@ -1,3 +1,4 @@
+import React from 'react';
 import { useState, useRef, useEffect, useReducer } from 'react';
 import { Mic, Square, Play, Pause, Trash2, Plus, ChevronLeft, ChevronRight } from 'lucide-react';
 import type { VoiceNote } from '../store';

@@ -57,7 +57,11 @@ export async function register(req: Request, res: Response): Promise<void> {
     );
 
     const user = result.rows[0];
-    const token = jwt.sign({ id: user.id, email: user.email, role: user.role }, jwtSecret);
+    const token = jwt.sign(
+      { id: user.id, email: user.email, role: user.role },
+      jwtSecret,
+      { expiresIn: '7d' },
+    );
 
     res.status(201).json({
       token,
@@ -130,7 +134,11 @@ export async function login(req: Request, res: Response): Promise<void> {
       role: row.role,
     };
 
-    const token = jwt.sign({ id: user.id, email: user.email, role: user.role }, jwtSecret);
+    const token = jwt.sign(
+      { id: user.id, email: user.email, role: user.role },
+      jwtSecret,
+      { expiresIn: '7d' },
+    );
 
     res.json({
       token,
