@@ -1,0 +1,129 @@
+import { Outlet, useNavigate, useLocation } from 'react-router';
+import { Home, BookOpen, FileQuestion, Mic, GraduationCap, Users, LogOut } from 'lucide-react';
+import { type User } from '../store';
+import React, { useState, useEffect } from 'react';
+
+export function Layout() {
+  const navigate = useNavigate();
+  const location = useLocation();
+  // TODO: API call
+  // const [user] = useState<User | null>(() => getState().user);
+  const [user] = useState<User | null>(() => {
+    const raw = localStorage.getItem('user');
+    return raw ? JSON.parse(raw) : null;
+  });
+  const [menuOpen, setMenuOpen] = useState(false);
+
+  useEffect(() => {
+    if (!user) {
+      navigate('/login');
+    }
+  }, [user, navigate]);
+
+  if (!user) {
+    return null;
+  }
+
+  const navItems = [
+    { path: '/', label: 'Ana Sayfa', icon: Home },
+    { path: '/questions', label: 'Sorular', icon: FileQuestion },
+    { path: '/review', label: 'Tekrar Et', icon: BookOpen },
+    { path: '/topics', label: 'Konular', icon: BookOpen },
+    { path: '/voice-notes', label: 'Ses Notları', icon: Mic },
+  ];
+
+  if (user.role === 'teacher') {
+    navItems.push({ path: '/teacher', label: 'Öğretmen Paneli', icon: Users });
+  }
+
+  const handleLogout = () => {
+    // TODO: API call
+    // const state = getState();
+    // setState({ ...state, user: null });
+    navigate('/login');
+  };
+
+  const isActive = (path: string) => location.pathname === path;
+
+  return (
+    <div className="min-h-screen bg-background flex flex-col">
+      {/* Top bar */}
+      <header className="bg-primary text-primary-foreground px-4 py-3 flex items-center justify-between sticky top-0 z-50">
+        <div className="flex items-center gap-3">
+          <button className="md:hidden" onClick={() => setMenuOpen(!menuOpen)}>
+            <svg width="24" height="24" viewBox="0 0 24 24" fill="none" stroke="currentColor" strokeWidth="2"><path d="M3 12h18M3 6h18M3 18h18"/></svg>
+          </button>
+          <h1 className="text-xl cursor-pointer" onClick={() => navigate('/')}>
+            🔄 Tekrarla
+          </h1>
+        </div>
+        <div className="flex items-center gap-3">
+          <span className="text-sm opacity-80 hidden sm:inline">{user.name}</span>
+          <button onClick={handleLogout} className="opacity-80 hover:opacity-100" title="Çıkış">
+            <LogOut className="w-5 h-5" />
+          </button>
+        </div>
+      </header>
+
+      <div className="flex flex-1">
+        {/* Sidebar - desktop */}
+        <nav className="hidden md:flex flex-col w-56 bg-card border-r border-border p-3 gap-1">
+          {navItems.map(item => (
+            <button
+              key={item.path}
+              onClick={() => navigate(item.path)}
+              className={`flex items-center gap-3 px-3 py-2.5 rounded-lg text-left transition-colors ${
+                isActive(item.path) ? 'bg-primary text-primary-foreground' : 'hover:bg-accent text-foreground'
+              }`}
+            >
+              <item.icon className="w-5 h-5" />
+              <span>{item.label}</span>
+            </button>
+          ))}
+        </nav>
+
+        {/* Mobile nav overlay */}
+        {menuOpen && (
+          <div className="fixed inset-0 z-40 md:hidden" onClick={() => setMenuOpen(false)}>
+            <div className="absolute inset-0 bg-black/50" />
+            <nav className="absolute left-0 top-0 bottom-0 w-64 bg-card p-3 pt-16 flex flex-col gap-1" onClick={e => e.stopPropagation()}>
+              {navItems.map(item => (
+                <button
+                  key={item.path}
+                  onClick={() => { navigate(item.path); setMenuOpen(false); }}
+                  className={`flex items-center gap-3 px-3 py-2.5 rounded-lg text-left transition-colors ${
+                    isActive(item.path) ? 'bg-primary text-primary-foreground' : 'hover:bg-accent text-foreground'
+                  }`}
+                >
+                  <item.icon className="w-5 h-5" />
+                  <span>{item.label}</span>
+                </button>
+              ))}
+            </nav>
+          </div>
+        )}
+
+        {/* Main content */}
+        <main className="flex-1 p-4 md:p-6 max-w-5xl mx-auto w-full">
+          <Outlet />
+        </main>
+      </div>
+
+      {/* Bottom nav - mobile */}
+      <nav className="md:hidden fixed bottom-0 left-0 right-0 bg-card border-t border-border flex z-50">
+        {navItems.slice(0, 5).map(item => (
+          <button
+            key={item.path}
+            onClick={() => navigate(item.path)}
+            className={`flex-1 flex flex-col items-center py-2 gap-0.5 ${
+              isActive(item.path) ? 'text-primary' : 'text-muted-foreground'
+            }`}
+          >
+            <item.icon className="w-5 h-5" />
+            <span className="text-[10px]">{item.label}</span>
+          </button>
+        ))}
+      </nav>
+    </div>
+  );
+}
