@@ -1,23 +1,50 @@
-import { useMemo } from 'react';
+import { useMemo, useState, useEffect } from 'react';
 import { useNavigate } from 'react-router';
 import { FileQuestion, BookOpen, Mic, Clock, CheckCircle, AlertTriangle } from 'lucide-react';
-import { isDueForReview, type Question, type Topic, type VoiceNote, type User } from '../store';
+import { isDueForReview, type User } from '../store';
+import { api } from '../api';
 
 export function Dashboard() {
   const navigate = useNavigate();
-  // TODO: API call
-  // const state = getState();
-  const questions = [] as Question[];
-  const topics = [] as Topic[];
-  const voiceNotes = [] as VoiceNote[];
-  const user = null as User | null;
+  const [questions, setQuestions] = useState<any[]>([]);
+  const [topics, setTopics] = useState<any[]>([]);
+  const [voiceNotes, setVoiceNotes] = useState<any[]>([]);
+  const [loading, setLoading] = useState(true);
+  const [user] = useState<User | null>(() => {
+    const raw = localStorage.getItem('user');
+    return raw ? JSON.parse(raw) : null;
+  });
+
+  useEffect(() => {
+    let cancelled = false;
+    (async () => {
+      try {
+        const [qRes, tRes, vRes] = await Promise.all([
+          api.get('/questions'),
+          api.get('/topics'),
+          api.get('/voice-notes'),
+        ]);
+        if (cancelled) return;
+        setQuestions(qRes.data ?? []);
+        setTopics(tRes.data ?? []);
+        setVoiceNotes(vRes.data ?? []);
+      } finally {
+        if (!cancelled) setLoading(false);
+      }
+    })();
+    return () => {
+      cancelled = true;
+    };
+  }, []);
 
   const stats = useMemo(() => {
     const activeQuestions = questions.filter(q => !q.deleted);
-    const dueQuestions = activeQuestions.filter(q => isDueForReview(q.nextReviewAt));
-    const dueTopics = topics.filter(t => isDueForReview(t.nextReviewAt));
+    const dueQuestions = activeQuestions.filter(q => isDueForReview(q.next_review_at));
+    const dueTopics = topics.filter(t => isDueForReview(t.next_review_at));
     const solvedQuestions = activeQuestions.filter(q => q.solved);
-    const totalReviews = activeQuestions.reduce((sum, q) => sum + q.reviewCount, 0) + topics.reduce((sum, t) => sum + t.reviewCount, 0);
+    const totalReviews =
+      activeQuestions.reduce((sum, q) => sum + (q.review_count ?? 0), 0) +
+      topics.reduce((sum, t) => sum + (t.review_count ?? 0), 0);
 
     return {
       totalQuestions: activeQuestions.length,
@@ -34,6 +61,14 @@ export function Dashboard() {
   }, [questions, topics, voiceNotes]);
 
   const totalDue = stats.dueQuestions + stats.dueTopics;
+
+  if (loading) {
+    return (
+      <div className="space-y-6 pb-20 md:pb-0">
+        <p className="text-muted-foreground">Yükleniyor...</p>
+      </div>
+    );
+  }
 
   return (
     <div className="space-y-6 pb-20 md:pb-0">
