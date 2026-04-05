@@ -4,6 +4,15 @@ import type { Topic } from '../store';
 import { api } from '../api';
 import imageCompression from 'browser-image-compression';
 import { toast } from 'sonner';
+import {
+  AlertDialog,
+  AlertDialogCancel,
+  AlertDialogContent,
+  AlertDialogFooter,
+  AlertDialogHeader,
+  AlertDialogTitle,
+} from './ui/alert-dialog';
+import { Button } from './ui/button';
 
 type TopicRow = {
   id: string;
@@ -35,6 +44,7 @@ export function TopicsPage() {
   const [imageUrl, setImageUrl] = useState('');
   const fileRef = useRef<HTMLInputElement>(null);
   const [expandedId, setExpandedId] = useState<string | null>(null);
+  const [idToDelete, setIdToDelete] = useState<string | null>(null);
 
   useEffect(() => {
     let cancelled = false;
@@ -98,6 +108,7 @@ export function TopicsPage() {
     try {
       await api.delete(`/topics/${id}`);
       setTopics(prev => prev.filter(t => t.id !== id));
+      setIdToDelete(null);
       toast.success('Konu silindi');
     } catch {
       toast.error('Konu silinemedi');
@@ -175,7 +186,7 @@ export function TopicsPage() {
                 <div className="px-4 pb-4 border-t border-border pt-3">
                   <p className="whitespace-pre-wrap text-muted-foreground">{t.notes}</p>
                   {t.imageUrl && <img src={t.imageUrl} alt="Not" className="mt-3 rounded-lg max-h-48 object-contain" />}
-                  <button onClick={() => void handleDelete(t.id)} className="mt-3 text-sm text-destructive hover:underline">
+                  <button type="button" onClick={() => setIdToDelete(t.id)} className="mt-3 text-sm text-destructive hover:underline">
                     Sil
                   </button>
                 </div>
@@ -184,6 +195,24 @@ export function TopicsPage() {
           ))}
         </div>
       )}
+
+      <AlertDialog open={idToDelete !== null} onOpenChange={(open) => { if (!open) setIdToDelete(null); }}>
+        <AlertDialogContent>
+          <AlertDialogHeader>
+            <AlertDialogTitle>Bu konuyu silmek istediğine emin misin?</AlertDialogTitle>
+          </AlertDialogHeader>
+          <AlertDialogFooter>
+            <AlertDialogCancel type="button">İptal</AlertDialogCancel>
+            <Button
+              type="button"
+              variant="destructive"
+              onClick={() => idToDelete && void handleDelete(idToDelete)}
+            >
+              Sil
+            </Button>
+          </AlertDialogFooter>
+        </AlertDialogContent>
+      </AlertDialog>
     </div>
   );
 }

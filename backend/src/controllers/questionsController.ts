@@ -110,6 +110,65 @@ export async function createQuestion(req: Request, res: Response): Promise<void>
   }
 }
 
+export async function updateQuestion(req: Request, res: Response): Promise<void> {
+  const userId = req.user?.id;
+  if (!userId) {
+    res.status(401).json({ error: 'Unauthorized' });
+    return;
+  }
+
+  const { id } = req.params;
+  if (!id) {
+    res.status(400).json({ error: 'id is required' });
+    return;
+  }
+
+  const body = req.body as {
+    solved?: unknown;
+    review_count?: unknown;
+    next_review_at?: unknown;
+  };
+
+  if (typeof body.solved !== 'boolean') {
+    res.status(400).json({ error: 'solved must be a boolean' });
+    return;
+  }
+  if (typeof body.review_count !== 'number' || !Number.isInteger(body.review_count)) {
+    res.status(400).json({ error: 'review_count must be an integer' });
+    return;
+  }
+  if (typeof body.next_review_at !== 'string') {
+    res.status(400).json({ error: 'next_review_at must be a string' });
+    return;
+  }
+
+  const nextReviewAt = new Date(body.next_review_at);
+  if (Number.isNaN(nextReviewAt.getTime())) {
+    res.status(400).json({ error: 'next_review_at must be a valid ISO date' });
+    return;
+  }
+
+  try {
+    const result = await pool.query<QuestionRow>(
+      `UPDATE questions
+       SET solved = $3, review_count = $4, next_review_at = $5
+       WHERE id = $1 AND user_id = $2
+       RETURNING id, user_id, image_url, answer_image_url, answer_text, difficulty, subject,
+                 created_at, next_review_at, review_count, solved, deleted`,
+      [id, userId, body.solved, body.review_count, nextReviewAt]
+    );
+    const row = result.rows[0];
+    if (!row) {
+      res.status(404).json({ error: 'Question not found' });
+      return;
+    }
+    res.json(row);
+  } catch (err) {
+    console.error('updateQuestion error:', err);
+    res.status(500).json({ error: 'Failed to update question' });
+  }
+}
+
 export async function deleteQuestion(req: Request, res: Response): Promise<void> {
   const userId = req.user?.id;
   if (!userId) {

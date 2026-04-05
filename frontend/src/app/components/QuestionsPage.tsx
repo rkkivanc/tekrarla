@@ -4,6 +4,15 @@ import imageCompression from 'browser-image-compression';
 import type { Question } from '../store';
 import { api } from '../api';
 import { toast } from 'sonner';
+import {
+  AlertDialog,
+  AlertDialogCancel,
+  AlertDialogContent,
+  AlertDialogFooter,
+  AlertDialogHeader,
+  AlertDialogTitle,
+} from './ui/alert-dialog';
+import { Button } from './ui/button';
 
 type QuestionApiRow = {
   id: string;
@@ -46,6 +55,7 @@ export function QuestionsPage() {
   const [answerType, setAnswerType] = useState<'text' | 'image'>('text');
   const qInputRef = useRef<HTMLInputElement>(null);
   const aInputRef = useRef<HTMLInputElement>(null);
+  const [idToDelete, setIdToDelete] = useState<string | null>(null);
 
   const refreshQuestions = useCallback(async () => {
     try {
@@ -108,6 +118,7 @@ export function QuestionsPage() {
     try {
       await api.delete(`/questions/${id}`);
       setQuestions(prev => prev.filter(q => q.id !== id));
+      setIdToDelete(null);
     } catch (e) {
       console.error(e);
       toast.error('Soru silinemedi');
@@ -218,7 +229,7 @@ export function QuestionsPage() {
                 <img src={q.imageUrl} alt="Soru" className="w-full h-40 object-cover" />
                 <button
                   type="button"
-                  onClick={() => handleDeleteQuestion(q.id)}
+                  onClick={() => setIdToDelete(q.id)}
                   className="absolute top-2 right-2 p-1 rounded-full bg-black/50 text-white hover:bg-black/70"
                   aria-label="Soruyu sil"
                 >
@@ -240,6 +251,24 @@ export function QuestionsPage() {
           ))}
         </div>
       )}
+
+      <AlertDialog open={idToDelete !== null} onOpenChange={(open) => { if (!open) setIdToDelete(null); }}>
+        <AlertDialogContent>
+          <AlertDialogHeader>
+            <AlertDialogTitle>Bu soruyu silmek istediğine emin misin?</AlertDialogTitle>
+          </AlertDialogHeader>
+          <AlertDialogFooter>
+            <AlertDialogCancel type="button">İptal</AlertDialogCancel>
+            <Button
+              type="button"
+              variant="destructive"
+              onClick={() => idToDelete && void handleDeleteQuestion(idToDelete)}
+            >
+              Sil
+            </Button>
+          </AlertDialogFooter>
+        </AlertDialogContent>
+      </AlertDialog>
     </div>
   );
 }

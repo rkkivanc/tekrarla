@@ -82,6 +82,59 @@ export async function createTopic(req: Request, res: Response): Promise<void> {
   }
 }
 
+export async function updateTopic(req: Request, res: Response): Promise<void> {
+  const userId = req.user?.id;
+  if (!userId) {
+    res.status(401).json({ error: 'Unauthorized' });
+    return;
+  }
+
+  const { id } = req.params;
+  if (!id) {
+    res.status(400).json({ error: 'id is required' });
+    return;
+  }
+
+  const body = req.body as {
+    review_count?: unknown;
+    next_review_at?: unknown;
+  };
+
+  if (typeof body.review_count !== 'number' || !Number.isInteger(body.review_count)) {
+    res.status(400).json({ error: 'review_count must be an integer' });
+    return;
+  }
+  if (typeof body.next_review_at !== 'string') {
+    res.status(400).json({ error: 'next_review_at must be a string' });
+    return;
+  }
+
+  const nextReviewAt = new Date(body.next_review_at);
+  if (Number.isNaN(nextReviewAt.getTime())) {
+    res.status(400).json({ error: 'next_review_at must be a valid ISO date' });
+    return;
+  }
+
+  try {
+    const result = await pool.query<TopicRow>(
+      `UPDATE topics
+       SET review_count = $3, next_review_at = $4
+       WHERE id = $1 AND user_id = $2
+       RETURNING id, user_id, title, notes, image_url, created_at, next_review_at, review_count`,
+      [id, userId, body.review_count, nextReviewAt]
+    );
+    const row = result.rows[0];
+    if (!row) {
+      res.status(404).json({ error: 'Topic not found' });
+      return;
+    }
+    res.json(row);
+  } catch (err) {
+    console.error('updateTopic error:', err);
+    res.status(500).json({ error: 'Failed to update topic' });
+  }
+}
+
 export async function deleteTopic(req: Request, res: Response): Promise<void> {
   const userId = req.user?.id;
   if (!userId) {

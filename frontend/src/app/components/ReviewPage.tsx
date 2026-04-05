@@ -1,178 +1,483 @@
-import { useState, useMemo } from 'react';
-import { RotateCcw, Check, X, Eye, EyeOff, Trash2, BookOpen } from 'lucide-react';
+import { useState, useEffect, useLayoutEffect, useRef } from 'react';
+import { Check, X, Eye, Trash2, BookOpen, FileQuestion } from 'lucide-react';
 import { isDueForReview, getNextReviewDate, type Question, type Topic } from '../store';
+import { api } from '../api';
 import { toast } from 'sonner';
-import { motion, AnimatePresence } from 'motion/react';
+import {
+  AlertDialog,
+  AlertDialogCancel,
+  AlertDialogContent,
+  AlertDialogDescription,
+  AlertDialogFooter,
+  AlertDialogHeader,
+  AlertDialogTitle,
+} from './ui/alert-dialog';
+import { Button, buttonVariants } from './ui/button';
+import { cn } from './ui/utils';
 
 type ReviewItem = { type: 'question'; data: Question } | { type: 'topic'; data: Topic };
 
+type QuestionApiRow = {
+  id: string;
+  image_url: string;
+  answer_image_url: string | null;
+  answer_text: string | null;
+  difficulty: string;
+  subject: string | null;
+  created_at: string;
+  next_review_at: string | null;
+  review_count: number;
+  solved: boolean;
+  deleted: boolean;
+};
+
+type TopicApiRow = {
+  id: string;
+  title: string;
+  notes: string | null;
+  image_url: string | null;
+  created_at: string;
+  next_review_at: string | null;
+  review_count: number;
+};
+
+function mapQuestionRow(row: QuestionApiRow): Question {
+  return {
+    id: row.id,
+    imageUrl: row.image_url,
+    answerImageUrl: row.answer_image_url ?? undefined,
+    answerText: row.answer_text ?? undefined,
+    difficulty: row.difficulty as Question['difficulty'],
+    subject: row.subject ?? undefined,
+    createdAt: row.created_at,
+    nextReviewAt: row.next_review_at ?? new Date().toISOString(),
+    reviewCount: row.review_count,
+    solved: row.solved,
+    deleted: row.deleted,
+  };
+}
+
+type EarlyReviewAfterPatchCtx =
+  | { type: 'question'; id: string; solved: boolean; reviewCount: number; difficulty: Question['difficulty'] }
+  | { type: 'topic'; id: string; reviewCount: number };
+
+function mapTopicRow(row: TopicApiRow): Topic {
+  return {
+    id: row.id,
+    title: row.title,
+    notes: row.notes ?? '',
+    imageUrl: row.image_url ?? undefined,
+    createdAt: row.created_at,
+    nextReviewAt: row.next_review_at ?? new Date().toISOString(),
+    reviewCount: row.review_count,
+  };
+}
+
 export function ReviewPage() {
-  const [items, setItems] = useState<ReviewItem[]>(() => {
-    // TODO: API call
-    // const state = getState();
-    // const dueQ = state.questions.filter(q => !q.deleted && isDueForReview(q.nextReviewAt)).map(q => ({ type: 'question' as const, data: q }));
-    // const dueT = state.topics.filter(t => isDueForReview(t.nextReviewAt)).map(t => ({ type: 'topic' as const, data: t }));
-    // return [...dueQ, ...dueT];
-    return [];
-  });
+  const [items, setItems] = useState<ReviewItem[]>([]);
+  const [upcomingItems, setUpcomingItems] = useState<ReviewItem[]>([]);
+  const [loading, setLoading] = useState(true);
   const [currentIndex, setCurrentIndex] = useState(0);
   const [showAnswer, setShowAnswer] = useState(false);
   const [flipped, setFlipped] = useState(false);
+  const [isCurrentEarlyReview, setIsCurrentEarlyReview] = useState(false);
+  const [earlyReviewDialogOpen, setEarlyReviewDialogOpen] = useState(false);
+  const [deleteDialogOpen, setDeleteDialogOpen] = useState(false);
+  const earlyReviewCtxRef = useRef<EarlyReviewAfterPatchCtx | null>(null);
+  const reviewSectionRef = useRef<HTMLDivElement>(null);
+  const pendingScrollToReviewRef = useRef(false);
+
+  useLayoutEffect(() => {
+    if (!pendingScrollToReviewRef.current || items.length === 0) return;
+    pendingScrollToReviewRef.current = false;
+    reviewSectionRef.current?.scrollIntoView({ behavior: 'smooth', block: 'start' });
+  }, [items.length]);
+
+  useEffect(() => {
+    let cancelled = false;
+    (async () => {
+      try {
+        const [qRes, tRes] = await Promise.all([
+          api.get<QuestionApiRow[]>('/questions'),
+          api.get<TopicApiRow[]>('/topics'),
+        ]);
+        if (cancelled) return;
+        const dueQ = qRes.data
+          .filter(row => !row.deleted && row.next_review_at != null && isDueForReview(row.next_review_at))
+          .map(row => ({ type: 'question' as const, data: mapQuestionRow(row) }));
+        const dueT = tRes.data
+          .filter(row => row.next_review_at != null && isDueForReview(row.next_review_at))
+          .map(row => ({ type: 'topic' as const, data: mapTopicRow(row) }));
+        const upcomingQ = qRes.data
+          .filter(row => !row.deleted && row.next_review_at != null && !isDueForReview(row.next_review_at))
+          .map(row => ({ type: 'question' as const, data: mapQuestionRow(row) }));
+        const upcomingT = tRes.data
+          .filter(row => row.next_review_at != null && !isDueForReview(row.next_review_at))
+          .map(row => ({ type: 'topic' as const, data: mapTopicRow(row) }));
+        setItems([...dueQ, ...dueT]);
+        setUpcomingItems([...upcomingQ, ...upcomingT]);
+      } catch (e) {
+        console.error(e);
+        if (!cancelled) toast.error('Tekrar listesi yüklenemedi');
+      } finally {
+        if (!cancelled) setLoading(false);
+      }
+    })();
+    return () => {
+      cancelled = true;
+    };
+  }, []);
 
   const current = items[currentIndex];
 
-  const handleSolved = (solved: boolean) => {
+  const handleSolved = async (solved: boolean, earlyReview = false) => {
     if (!current) return;
-    // TODO: API call
-    // const state = getState();
-    //
-    // if (current.type === 'question') {
-    //   const q = current.data;
-    //   const updatedQuestions = state.questions.map(sq => {
-    //     if (sq.id !== q.id) return sq;
-    //     if (solved) {
-    //       return { ...sq, solved: true, reviewCount: sq.reviewCount + 1, nextReviewAt: getNextReviewDate(sq.difficulty) };
-    //     } else {
-    //       // Failed - restart timer based on difficulty
-    //       return { ...sq, reviewCount: sq.reviewCount + 1, nextReviewAt: getNextReviewDate(sq.difficulty) };
-    //     }
-    //   });
-    //   setState({ ...state, questions: updatedQuestions });
-    // } else {
-    //   const t = current.data;
-    //   const updatedTopics = state.topics.map(st => {
-    //     if (st.id !== t.id) return st;
-    //     return { ...st, reviewCount: st.reviewCount + 1, nextReviewAt: new Date(Date.now() + 3 * 86400000).toISOString() };
-    //   });
-    //   setState({ ...state, topics: updatedTopics });
-    // }
+    const isEarly = earlyReview || isCurrentEarlyReview;
+    try {
+      if (isEarly) {
+        if (current.type === 'question') {
+          const q = current.data;
+          const preserved = q.nextReviewAt;
+          await api.patch(`/questions/${q.id}`, {
+            solved,
+            review_count: q.reviewCount + 1,
+            next_review_at: preserved,
+          });
+          earlyReviewCtxRef.current = {
+            type: 'question',
+            id: q.id,
+            solved,
+            reviewCount: q.reviewCount + 1,
+            difficulty: q.difficulty,
+          };
+        } else {
+          const t = current.data;
+          const preserved = t.nextReviewAt;
+          await api.patch(`/topics/${t.id}`, {
+            review_count: t.reviewCount + 1,
+            next_review_at: preserved,
+          });
+          earlyReviewCtxRef.current = {
+            type: 'topic',
+            id: t.id,
+            reviewCount: t.reviewCount + 1,
+          };
+        }
+        setEarlyReviewDialogOpen(true);
+        return;
+      }
 
-    toast.success(solved ? 'Harika! Başardın! 🎉' : 'Tekrar zamanı ayarlandı');
+      if (current.type === 'question') {
+        const q = current.data;
+        await api.patch(`/questions/${q.id}`, {
+          solved,
+          review_count: q.reviewCount + 1,
+          next_review_at: getNextReviewDate(q.difficulty),
+        });
+      } else {
+        const t = current.data;
+        const nextReviewAt = new Date(Date.now() + 3 * 86_400_000).toISOString();
+        await api.patch(`/topics/${t.id}`, {
+          review_count: t.reviewCount + 1,
+          next_review_at: nextReviewAt,
+        });
+      }
+      toast.success(solved ? 'Harika! Başardın! 🎉' : 'Tekrar zamanı ayarlandı');
+      next();
+    } catch (e) {
+      console.error(e);
+      toast.error('Güncelleme başarısız');
+    }
+  };
+
+  const finishEarlyReviewKeepSchedule = () => {
+    setEarlyReviewDialogOpen(false);
+    earlyReviewCtxRef.current = null;
+    setIsCurrentEarlyReview(false);
+    toast.success('Planlanmış tekrar tarihi korundu');
     next();
   };
 
-  const handleDelete = () => {
-    if (!current || current.type !== 'question') return;
-    // TODO: API call
-    // const state = getState();
-    // const updatedQuestions = state.questions.map(q => q.id === current.data.id ? { ...q, deleted: true } : q);
-    // setState({ ...state, questions: updatedQuestions });
-    toast.success('Soru silindi');
-    const newItems = items.filter((_, i) => i !== currentIndex);
-    setItems(newItems);
-    if (currentIndex >= newItems.length) setCurrentIndex(Math.max(0, newItems.length - 1));
+  const finishEarlyReviewResetSchedule = async () => {
+    const ctx = earlyReviewCtxRef.current;
+    if (!ctx) {
+      setEarlyReviewDialogOpen(false);
+      return;
+    }
+    try {
+      if (ctx.type === 'question') {
+        await api.patch(`/questions/${ctx.id}`, {
+          solved: ctx.solved,
+          review_count: ctx.reviewCount,
+          next_review_at: getNextReviewDate(ctx.difficulty),
+        });
+      } else {
+        const nextReviewAt = new Date(Date.now() + 3 * 86_400_000).toISOString();
+        await api.patch(`/topics/${ctx.id}`, {
+          review_count: ctx.reviewCount,
+          next_review_at: nextReviewAt,
+        });
+      }
+      setEarlyReviewDialogOpen(false);
+      earlyReviewCtxRef.current = null;
+      setIsCurrentEarlyReview(false);
+      toast.success('Tekrar zamanı güncellendi');
+      next();
+    } catch (e) {
+      console.error(e);
+      toast.error('Güncelleme başarısız');
+    }
+  };
+
+  const handleStartEarlyRepeat = (item: ReviewItem) => {
+    pendingScrollToReviewRef.current = true;
+    setUpcomingItems(prev => prev.filter(x => !(x.type === item.type && x.data.id === item.data.id)));
+    setItems(prev => [item, ...prev]);
+    setCurrentIndex(0);
     setShowAnswer(false);
     setFlipped(false);
+    setIsCurrentEarlyReview(true);
+  };
+
+  const handleDelete = async () => {
+    if (!current || current.type !== 'question') return;
+    try {
+      await api.delete(`/questions/${current.data.id}`);
+      toast.success('Soru silindi');
+      setDeleteDialogOpen(false);
+      const newItems = items.filter((_, i) => i !== currentIndex);
+      setItems(newItems);
+      if (currentIndex >= newItems.length) setCurrentIndex(Math.max(0, newItems.length - 1));
+      setShowAnswer(false);
+      setFlipped(false);
+    } catch (e) {
+      console.error(e);
+      toast.error('Soru silinemedi');
+    }
   };
 
   const next = () => {
     setShowAnswer(false);
     setFlipped(false);
+    setIsCurrentEarlyReview(false);
     const newItems = items.filter((_, i) => i !== currentIndex);
     setItems(newItems);
     if (currentIndex >= newItems.length) setCurrentIndex(Math.max(0, newItems.length - 1));
   };
 
-  if (items.length === 0) {
+  if (loading) {
     return (
       <div className="flex flex-col items-center justify-center py-20 text-center pb-20 md:pb-0">
-        <div className="w-20 h-20 rounded-full bg-green-50 flex items-center justify-center mb-4">
-          <Check className="w-10 h-10 text-green-600" />
-        </div>
-        <h2>Tebrikler! 🎉</h2>
-        <p className="text-muted-foreground mt-2">Şu an tekrar edilecek bir şey yok.</p>
-        <p className="text-sm text-muted-foreground mt-1">Yeni sorular ve konular ekleyerek tekrar planını oluştur.</p>
+        <p className="text-muted-foreground">Yükleniyor...</p>
       </div>
     );
   }
 
   return (
     <div className="space-y-4 pb-20 md:pb-0">
-      <div className="flex items-center justify-between">
-        <h1>Tekrar Et</h1>
-        <span className="text-sm text-muted-foreground">{currentIndex + 1} / {items.length}</span>
-      </div>
+      <AlertDialog open={deleteDialogOpen} onOpenChange={setDeleteDialogOpen}>
+        <AlertDialogContent>
+          <AlertDialogHeader>
+            <AlertDialogTitle>Bu soruyu silmek istediğine emin misin?</AlertDialogTitle>
+          </AlertDialogHeader>
+          <AlertDialogFooter>
+            <AlertDialogCancel type="button">İptal</AlertDialogCancel>
+            <Button type="button" variant="destructive" onClick={() => void handleDelete()}>
+              Sil
+            </Button>
+          </AlertDialogFooter>
+        </AlertDialogContent>
+      </AlertDialog>
 
-      {/* Progress bar */}
-      <div className="w-full bg-muted rounded-full h-2">
-        <div className="bg-primary h-2 rounded-full transition-all" style={{ width: `${((items.length - items.length + currentIndex) / Math.max(1, items.length)) * 100}%` }} />
-      </div>
+      <AlertDialog open={earlyReviewDialogOpen} onOpenChange={setEarlyReviewDialogOpen}>
+        <AlertDialogContent>
+          <AlertDialogHeader>
+            <AlertDialogTitle>Tekrar zamanı henüz gelmemişti.</AlertDialogTitle>
+            <AlertDialogDescription>
+              Bir dahaki tekrar için ne yapalım?
+            </AlertDialogDescription>
+          </AlertDialogHeader>
+          <AlertDialogFooter>
+            <AlertDialogCancel
+              type="button"
+              className={cn(buttonVariants({ variant: 'outline' }), 'sm:mt-0')}
+              onClick={() => {
+                finishEarlyReviewKeepSchedule();
+              }}
+            >
+              Planlanmış zamanda tekrar et
+            </AlertDialogCancel>
+            <Button type="button" onClick={() => void finishEarlyReviewResetSchedule()}>
+              Tekrar zamanını sıfırla
+            </Button>
+          </AlertDialogFooter>
+        </AlertDialogContent>
+      </AlertDialog>
 
-      {current && (
-        <div className="flex flex-col items-center">
-          {current.type === 'question' ? (
-            <QuestionCard question={current.data} showAnswer={showAnswer} flipped={flipped} onFlip={() => { setShowAnswer(true); setFlipped(true); }} />
-          ) : (
-            <TopicCard topic={current.data} showAnswer={showAnswer} onShow={() => setShowAnswer(true)} />
-          )}
+      {items.length === 0 ? (
+        <div className="flex flex-col items-center justify-center py-20 text-center">
+          <div className="w-20 h-20 rounded-full bg-green-50 flex items-center justify-center mb-4">
+            <Check className="w-10 h-10 text-green-600" />
+          </div>
+          <h2>Tebrikler! 🎉</h2>
+          <p className="text-muted-foreground mt-2">Şu an tekrar edilecek bir şey yok.</p>
+          <p className="text-sm text-muted-foreground mt-1">Yeni sorular ve konular ekleyerek tekrar planını oluştur.</p>
+        </div>
+      ) : (
+        <div ref={reviewSectionRef} className="scroll-mt-4">
+          <div className="mx-auto flex w-full max-w-md flex-col items-center space-y-4">
+            <div className="flex w-full items-center justify-between">
+              <h1>Tekrar Et</h1>
+              <span className="text-sm text-muted-foreground">{currentIndex + 1} / {items.length}</span>
+            </div>
 
-          {/* Actions */}
-          <div className="mt-6 w-full max-w-md space-y-3">
-            {!showAnswer ? (
-              <button
-                onClick={() => { setShowAnswer(true); setFlipped(true); }}
-                className="w-full py-3 rounded-xl bg-primary text-primary-foreground flex items-center justify-center gap-2"
-              >
-                <Eye className="w-5 h-5" />
-                Cevabı Göster
-              </button>
-            ) : (
-              <>
-                <div className="flex gap-3">
-                  <button onClick={() => handleSolved(false)} className="flex-1 py-3 rounded-xl bg-red-100 text-red-700 flex items-center justify-center gap-2">
-                    <X className="w-5 h-5" />
-                    Çözemedim
+            <div className="h-2 w-full rounded-full bg-muted">
+              <div className="h-2 rounded-full bg-primary transition-all" style={{ width: `${((items.length - items.length + currentIndex) / Math.max(1, items.length)) * 100}%` }} />
+            </div>
+
+            {current && (
+              <div className="flex w-full flex-col items-center space-y-4">
+                {current.type === 'question' ? (
+                  <QuestionCard question={current.data} flipped={flipped} />
+                ) : (
+                  <TopicCard topic={current.data} showAnswer={showAnswer} />
+                )}
+
+                {!showAnswer && (
+                  <button
+                    type="button"
+                    onClick={() => {
+                      setShowAnswer(true);
+                      setFlipped(true);
+                    }}
+                    className="flex w-full items-center justify-center gap-2 rounded-xl bg-primary py-3 text-primary-foreground"
+                  >
+                    <Eye className="h-5 w-5" />
+                    Cevabı Göster
                   </button>
-                  <button onClick={() => handleSolved(true)} className="flex-1 py-3 rounded-xl bg-green-100 text-green-700 flex items-center justify-center gap-2">
-                    <Check className="w-5 h-5" />
-                    Çözdüm
-                  </button>
-                </div>
-                {current.type === 'question' && (
-                  <div className="flex gap-3">
-                    <button onClick={handleDelete} className="flex-1 py-2 rounded-xl border border-border text-destructive flex items-center justify-center gap-2 text-sm">
-                      <Trash2 className="w-4 h-4" />
-                      Sil
-                    </button>
-                    <button onClick={() => handleSolved(true)} className="flex-1 py-2 rounded-xl border border-border text-foreground flex items-center justify-center gap-2 text-sm">
-                      <RotateCcw className="w-4 h-4" />
-                      Tekrar Tekrar Et
-                    </button>
+                )}
+
+                {showAnswer && (
+                  <div className="w-full space-y-3">
+                    <div className="flex gap-3">
+                      <button onClick={() => handleSolved(false, isCurrentEarlyReview)} className="flex flex-1 items-center justify-center gap-2 rounded-xl bg-red-100 py-3 text-red-700">
+                        <X className="h-5 w-5" />
+                        Çözemedim
+                      </button>
+                      <button onClick={() => handleSolved(true, isCurrentEarlyReview)} className="flex flex-1 items-center justify-center gap-2 rounded-xl bg-green-100 py-3 text-green-700">
+                        <Check className="h-5 w-5" />
+                        Çözdüm
+                      </button>
+                    </div>
+                    {current.type === 'question' && (
+                      <button
+                        type="button"
+                        onClick={() => setDeleteDialogOpen(true)}
+                        className="flex w-full items-center justify-center gap-2 rounded-xl border border-border py-2 text-sm text-destructive"
+                      >
+                        <Trash2 className="h-4 w-4" />
+                        Sil
+                      </button>
+                    )}
                   </div>
                 )}
-              </>
+              </div>
             )}
           </div>
         </div>
+      )}
+
+      {upcomingItems.length > 0 && (
+        <section className="pt-6 border-t border-border mt-8">
+          <h2 className="text-lg font-semibold mb-3">Yaklaşan Tekrarlar</h2>
+          <ul className="space-y-2">
+            {upcomingItems.map(item => (
+              <li
+                key={`${item.type}-${item.data.id}`}
+                className="flex items-start gap-3 rounded-xl border border-border bg-card p-3 text-left"
+              >
+                {item.type === 'question' ? (
+                  <FileQuestion className="w-5 h-5 shrink-0 text-primary mt-0.5" aria-hidden />
+                ) : (
+                  <BookOpen className="w-5 h-5 shrink-0 text-purple-600 mt-0.5" aria-hidden />
+                )}
+                <div className="min-w-0 flex-1">
+                  <p className="font-medium text-sm truncate">
+                    {item.type === 'question' ? (item.data.subject?.trim() || 'Soru') : item.data.title}
+                  </p>
+                  <p className="text-xs text-muted-foreground mt-0.5">
+                    Tekrar: {new Date(item.data.nextReviewAt).toLocaleDateString('tr-TR')}
+                  </p>
+                </div>
+                <Button
+                  type="button"
+                  size="sm"
+                  className="h-8 shrink-0 px-2.5 text-xs"
+                  onClick={() => handleStartEarlyRepeat(item)}
+                >
+                  Şimdi Tekrar Et
+                </Button>
+              </li>
+            ))}
+          </ul>
+        </section>
       )}
     </div>
   );
 }
 
-function QuestionCard({ question, showAnswer, flipped, onFlip }: { question: Question; showAnswer: boolean; flipped: boolean; onFlip: () => void }) {
+function QuestionCard({ question, flipped }: { question: Question; flipped: boolean }) {
+  const [zoomUrl, setZoomUrl] = useState<string | null>(null);
   const diffColor = { easy: 'bg-green-100 text-green-800', medium: 'bg-amber-100 text-amber-800', hard: 'bg-red-100 text-red-800' };
   const diffLabel = { easy: 'Kolay', medium: 'Orta', hard: 'Zor' };
 
   return (
-    <div className="w-full max-w-md perspective-1000" onClick={() => !flipped && onFlip()} style={{ cursor: !flipped ? 'pointer' : 'default' }}>
-      <div className="relative w-full min-h-[300px]" style={{ transformStyle: 'preserve-3d', transition: 'transform 0.6s', transform: flipped ? 'rotateY(180deg)' : '' }}>
+    <div className="perspective-1000 w-full max-w-md">
+      {zoomUrl && (
+        <div
+          className="fixed inset-0 z-[100] flex items-center justify-center bg-black/90 p-4"
+          onClick={() => setZoomUrl(null)}
+          role="presentation"
+        >
+          <img
+            src={zoomUrl}
+            alt=""
+            className="max-h-full max-w-full object-contain"
+            onClick={e => e.stopPropagation()}
+          />
+        </div>
+      )}
+      <div className="relative min-h-[300px] w-full" style={{ transformStyle: 'preserve-3d', transition: 'transform 0.6s', transform: flipped ? 'rotateY(180deg)' : '' }}>
         {/* Front - Question */}
-        <div className="absolute inset-0 bg-card rounded-2xl border border-border p-4 flex flex-col" style={{ backfaceVisibility: 'hidden' }}>
-          <div className="flex items-center justify-between mb-3">
-            <span className={`text-xs px-2 py-0.5 rounded-full ${diffColor[question.difficulty]}`}>{diffLabel[question.difficulty]}</span>
+        <button
+          type="button"
+          className="absolute inset-0 flex cursor-zoom-in flex-col rounded-2xl border border-border bg-card p-4 text-left"
+          style={{ backfaceVisibility: 'hidden' }}
+          onClick={() => setZoomUrl(question.imageUrl)}
+        >
+          <div className="mb-3 flex items-center justify-between">
+            <span className={`rounded-full px-2 py-0.5 text-xs ${diffColor[question.difficulty]}`}>{diffLabel[question.difficulty]}</span>
             {question.subject && <span className="text-xs text-muted-foreground">{question.subject}</span>}
           </div>
-          <img src={question.imageUrl} alt="Soru" className="flex-1 object-contain rounded-lg max-h-[250px]" />
-          <p className="text-center text-sm text-muted-foreground mt-3">Cevabı görmek için dokun</p>
-        </div>
+          <img src={question.imageUrl} alt="Soru" className="max-h-[250px] flex-1 rounded-lg object-contain" />
+        </button>
 
         {/* Back - Answer */}
-        <div className="absolute inset-0 bg-card rounded-2xl border border-border p-4 flex flex-col" style={{ backfaceVisibility: 'hidden', transform: 'rotateY(180deg)' }}>
-          <div className="text-xs text-muted-foreground mb-3">Cevap</div>
+        <div
+          className="absolute inset-0 flex flex-col rounded-2xl border border-border bg-card p-4"
+          style={{ backfaceVisibility: 'hidden', transform: 'rotateY(180deg)' }}
+        >
+          <div className="mb-3 text-xs text-muted-foreground">Cevap</div>
           {question.answerImageUrl ? (
-            <img src={question.answerImageUrl} alt="Cevap" className="flex-1 object-contain rounded-lg max-h-[250px]" />
+            <button
+              type="button"
+              className="flex flex-1 cursor-zoom-in flex-col text-left"
+              onClick={() => setZoomUrl(question.answerImageUrl!)}
+            >
+              <img src={question.answerImageUrl} alt="Cevap" className="max-h-[250px] flex-1 rounded-lg object-contain" />
+            </button>
           ) : (
-            <div className="flex-1 flex items-center justify-center p-4">
+            <div className="flex flex-1 items-center justify-center p-4">
               <p className="text-center text-lg">{question.answerText}</p>
             </div>
           )}
@@ -182,7 +487,7 @@ function QuestionCard({ question, showAnswer, flipped, onFlip }: { question: Que
   );
 }
 
-function TopicCard({ topic, showAnswer, onShow }: { topic: Topic; showAnswer: boolean; onShow: () => void }) {
+function TopicCard({ topic, showAnswer }: { topic: Topic; showAnswer: boolean }) {
   return (
     <div className="w-full max-w-md bg-card rounded-2xl border border-border p-5">
       <div className="flex items-center gap-2 mb-3">
@@ -195,11 +500,7 @@ function TopicCard({ topic, showAnswer, onShow }: { topic: Topic; showAnswer: bo
           <p className="text-muted-foreground whitespace-pre-wrap">{topic.notes}</p>
           {topic.imageUrl && <img src={topic.imageUrl} alt="Konu" className="mt-3 rounded-lg max-h-[200px] object-contain" />}
         </>
-      ) : (
-        <button onClick={onShow} className="w-full py-3 border border-border rounded-lg text-muted-foreground hover:bg-accent">
-          Notları görmek için tıkla
-        </button>
-      )}
+      ) : null}
     </div>
   );
 }

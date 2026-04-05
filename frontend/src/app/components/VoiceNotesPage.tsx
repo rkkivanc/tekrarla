@@ -3,6 +3,15 @@ import { Mic, Square, Play, Pause, Trash2, Plus, ChevronLeft, ChevronRight } fro
 import type { VoiceNote } from '../store';
 import { api } from '../api';
 import { toast } from 'sonner';
+import {
+  AlertDialog,
+  AlertDialogCancel,
+  AlertDialogContent,
+  AlertDialogFooter,
+  AlertDialogHeader,
+  AlertDialogTitle,
+} from './ui/alert-dialog';
+import { Button } from './ui/button';
 
 type VoiceNoteRow = {
   id: string;
@@ -41,6 +50,7 @@ export function VoiceNotesPage() {
   const timerRef = useRef<number | null>(null);
   const audioMapRef = useRef<Map<string, HTMLAudioElement>>(new Map());
   const [recordedUrl, setRecordedUrl] = useState<string | null>(null);
+  const [idToDelete, setIdToDelete] = useState<string | null>(null);
 
   useEffect(() => {
     return () => {
@@ -157,6 +167,7 @@ export function VoiceNotesPage() {
         return n;
       });
       setVoiceNotes(prev => prev.filter(v => v.id !== id));
+      setIdToDelete(null);
       toast.success('Ses kaydı silindi');
     } catch {
       toast.error('Silinemedi');
@@ -351,7 +362,7 @@ export function VoiceNotesPage() {
                 </div>
                 <button
                   type="button"
-                  onClick={() => void handleDelete(note.id)}
+                  onClick={() => setIdToDelete(note.id)}
                   className="p-2 text-muted-foreground hover:text-destructive shrink-0 self-start"
                   aria-label="Sil"
                 >
@@ -362,6 +373,24 @@ export function VoiceNotesPage() {
           })}
         </div>
       )}
+
+      <AlertDialog open={idToDelete !== null} onOpenChange={(open) => { if (!open) setIdToDelete(null); }}>
+        <AlertDialogContent>
+          <AlertDialogHeader>
+            <AlertDialogTitle>Bu ses kaydını silmek istediğine emin misin?</AlertDialogTitle>
+          </AlertDialogHeader>
+          <AlertDialogFooter>
+            <AlertDialogCancel type="button">İptal</AlertDialogCancel>
+            <Button
+              type="button"
+              variant="destructive"
+              onClick={() => idToDelete && void handleDelete(idToDelete)}
+            >
+              Sil
+            </Button>
+          </AlertDialogFooter>
+        </AlertDialogContent>
+      </AlertDialog>
     </div>
   );
 }
