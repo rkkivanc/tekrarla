@@ -3,3 +3,4 @@ backend/.env
 frontend/.env
 dist/
 .DS_Store
+frontend/.env.production
