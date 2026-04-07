@@ -17,6 +17,11 @@ type BeforeInstallPromptEvent = Event & {
 };
 
 const PWA_DISMISSED_KEY = 'pwa-dismissed';
+const PWA_IOS_DISMISSED_KEY = 'pwa-ios-dismissed';
+
+function isIosDevice(): boolean {
+  return typeof navigator !== 'undefined' && /iPad|iPhone|iPod/.test(navigator.userAgent);
+}
 
 export function Layout() {
   const navigate = useNavigate();
@@ -30,6 +35,7 @@ export function Layout() {
   const [menuOpen, setMenuOpen] = useState(false);
   const [logoutDialogOpen, setLogoutDialogOpen] = useState(false);
   const [deferredPrompt, setDeferredPrompt] = useState<BeforeInstallPromptEvent | null>(null);
+  const [showIosInstallHint, setShowIosInstallHint] = useState(false);
 
   useEffect(() => {
     if (!user) {
@@ -38,7 +44,15 @@ export function Layout() {
   }, [user, navigate]);
 
   useEffect(() => {
+    if (typeof window === 'undefined') return;
+    if (!isIosDevice()) return;
+    if (localStorage.getItem(PWA_IOS_DISMISSED_KEY)) return;
+    setShowIosInstallHint(true);
+  }, []);
+
+  useEffect(() => {
     if (typeof window === 'undefined' || localStorage.getItem(PWA_DISMISSED_KEY)) return;
+    if (isIosDevice()) return;
 
     const onBeforeInstallPrompt = (e: Event) => {
       e.preventDefault();
@@ -52,6 +66,11 @@ export function Layout() {
   const dismissPwaBanner = () => {
     localStorage.setItem(PWA_DISMISSED_KEY, '1');
     setDeferredPrompt(null);
+  };
+
+  const dismissIosPwaBanner = () => {
+    localStorage.setItem(PWA_IOS_DISMISSED_KEY, '1');
+    setShowIosInstallHint(false);
   };
 
   const handlePwaInstall = async () => {
@@ -112,7 +131,27 @@ export function Layout() {
         </div>
       </header>
 
-      {deferredPrompt && (
+      {showIosInstallHint && (
+        <div
+          className="bg-card border-b border-border px-4 py-3 flex items-start justify-between gap-3 shrink-0"
+          role="region"
+          aria-label="Ana ekrana ekleme"
+        >
+          <p className="text-sm text-foreground flex-1 min-w-0 whitespace-pre-line">
+            {`Ana ekrana eklemek için Safari'de\npaylaş ikonuna bas ve 'Ana Ekrana Ekle'yi seç`}
+          </p>
+          <button
+            type="button"
+            onClick={dismissIosPwaBanner}
+            className="p-1.5 rounded-lg text-muted-foreground hover:bg-accent hover:text-foreground shrink-0 mt-0.5"
+            aria-label="Kapat"
+          >
+            <X className="w-5 h-5" />
+          </button>
+        </div>
+      )}
+
+      {!showIosInstallHint && deferredPrompt && (
         <div
           className="bg-card border-b border-border px-4 py-3 flex items-center justify-between gap-3 shrink-0"
           role="region"
