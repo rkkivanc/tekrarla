@@ -54,8 +54,10 @@ export function QuestionsPage() {
   const [difficulty, setDifficulty] = useState<'easy' | 'medium' | 'hard'>('medium');
   const [subject, setSubject] = useState('');
   const [answerType, setAnswerType] = useState<'text' | 'image'>('text');
-  const qInputRef = useRef<HTMLInputElement>(null);
-  const aInputRef = useRef<HTMLInputElement>(null);
+  const qCameraRef = useRef<HTMLInputElement>(null);
+  const qGalleryRef = useRef<HTMLInputElement>(null);
+  const aCameraRef = useRef<HTMLInputElement>(null);
+  const aGalleryRef = useRef<HTMLInputElement>(null);
   const [idToDelete, setIdToDelete] = useState<string | null>(null);
 
   const refreshQuestions = useCallback(async () => {
@@ -152,12 +154,56 @@ export function QuestionsPage() {
                 <button onClick={() => setQuestionImg('')} className="absolute top-2 right-2 p-1 rounded-full bg-black/50 text-white"><X className="w-4 h-4" /></button>
               </div>
             ) : (
-              <button onClick={() => qInputRef.current?.click()} className="w-full py-8 border-2 border-dashed border-border rounded-lg flex flex-col items-center gap-2 hover:bg-accent transition-colors">
-                <Camera className="w-8 h-8 text-muted-foreground" />
-                <span className="text-sm text-muted-foreground">Fotoğraf çek veya yükle</span>
-              </button>
+              <div className="w-full py-8 border-2 border-dashed border-border rounded-lg flex flex-col items-center gap-3 hover:bg-accent transition-colors">
+                <Camera className="w-8 h-8 text-muted-foreground md:hidden" />
+                <button
+                  type="button"
+                  className="hidden md:inline-flex px-4 py-2 rounded-lg border border-border bg-background text-sm"
+                  onClick={() => qGalleryRef.current?.click()}
+                >
+                  Dosya Seç
+                </button>
+                <div className="flex md:hidden w-full flex-col sm:flex-row gap-2 px-4">
+                  <button
+                    type="button"
+                    className="flex-1 py-2 rounded-lg border border-border bg-background text-sm"
+                    onClick={() => qCameraRef.current?.click()}
+                  >
+                    Fotoğraf Çek
+                  </button>
+                  <button
+                    type="button"
+                    className="flex-1 py-2 rounded-lg border border-border bg-background text-sm"
+                    onClick={() => qGalleryRef.current?.click()}
+                  >
+                    Galeriden Seç
+                  </button>
+                </div>
+              </div>
             )}
-            <input ref={qInputRef} type="file" accept="image/*" capture="environment" className="hidden" onChange={e => e.target.files?.[0] && handleImageUpload(e.target.files[0], setQuestionImg)} />
+            <input
+              ref={qCameraRef}
+              type="file"
+              accept="image/*"
+              capture="environment"
+              className="hidden"
+              onChange={e => {
+                const f = e.target.files?.[0];
+                if (f) void handleImageUpload(f, setQuestionImg);
+                e.target.value = '';
+              }}
+            />
+            <input
+              ref={qGalleryRef}
+              type="file"
+              accept="image/*"
+              className="hidden"
+              onChange={e => {
+                const f = e.target.files?.[0];
+                if (f) void handleImageUpload(f, setQuestionImg);
+                e.target.value = '';
+              }}
+            />
           </div>
 
           {/* Subject */}
@@ -202,12 +248,56 @@ export function QuestionsPage() {
                   <button onClick={() => setAnswerImg('')} className="absolute top-2 right-2 p-1 rounded-full bg-black/50 text-white"><X className="w-4 h-4" /></button>
                 </div>
               ) : (
-                <button onClick={() => aInputRef.current?.click()} className="w-full py-8 border-2 border-dashed border-border rounded-lg flex flex-col items-center gap-2 hover:bg-accent transition-colors">
-                  <Camera className="w-8 h-8 text-muted-foreground" />
-                  <span className="text-sm text-muted-foreground">Cevap fotoğrafı yükle</span>
-                </button>
+                <div className="w-full py-8 border-2 border-dashed border-border rounded-lg flex flex-col items-center gap-3 hover:bg-accent transition-colors">
+                  <Camera className="w-8 h-8 text-muted-foreground md:hidden" />
+                  <button
+                    type="button"
+                    className="hidden md:inline-flex px-4 py-2 rounded-lg border border-border bg-background text-sm"
+                    onClick={() => aGalleryRef.current?.click()}
+                  >
+                    Dosya Seç
+                  </button>
+                  <div className="flex md:hidden w-full flex-col sm:flex-row gap-2 px-4">
+                    <button
+                      type="button"
+                      className="flex-1 py-2 rounded-lg border border-border bg-background text-sm"
+                      onClick={() => aCameraRef.current?.click()}
+                    >
+                      Fotoğraf Çek
+                    </button>
+                    <button
+                      type="button"
+                      className="flex-1 py-2 rounded-lg border border-border bg-background text-sm"
+                      onClick={() => aGalleryRef.current?.click()}
+                    >
+                      Galeriden Seç
+                    </button>
+                  </div>
+                </div>
               )}
-              <input ref={aInputRef} type="file" accept="image/*" capture="environment" className="hidden" onChange={e => e.target.files?.[0] && handleImageUpload(e.target.files[0], setAnswerImg)} />
+              <input
+                ref={aCameraRef}
+                type="file"
+                accept="image/*"
+                capture="environment"
+                className="hidden"
+                onChange={e => {
+                  const f = e.target.files?.[0];
+                  if (f) void handleImageUpload(f, setAnswerImg);
+                  e.target.value = '';
+                }}
+              />
+              <input
+                ref={aGalleryRef}
+                type="file"
+                accept="image/*"
+                className="hidden"
+                onChange={e => {
+                  const f = e.target.files?.[0];
+                  if (f) void handleImageUpload(f, setAnswerImg);
+                  e.target.value = '';
+                }}
+              />
             </div>
           )}
 

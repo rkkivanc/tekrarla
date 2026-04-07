@@ -43,7 +43,8 @@ export function TopicsPage() {
   const [title, setTitle] = useState('');
   const [notes, setNotes] = useState('');
   const [imageUrl, setImageUrl] = useState('');
-  const fileRef = useRef<HTMLInputElement>(null);
+  const fileCameraRef = useRef<HTMLInputElement>(null);
+  const fileGalleryRef = useRef<HTMLInputElement>(null);
   const [expandedId, setExpandedId] = useState<string | null>(null);
   const [idToDelete, setIdToDelete] = useState<string | null>(null);
 
@@ -140,12 +141,47 @@ export function TopicsPage() {
               </button>
             </div>
           ) : (
-            <button onClick={() => fileRef.current?.click()} className="w-full py-4 border-2 border-dashed border-border rounded-lg flex items-center justify-center gap-2 text-muted-foreground hover:bg-accent">
-              <Camera className="w-5 h-5" /> Fotoğraf ekle (opsiyonel)
-            </button>
+            <div className="w-full py-4 border-2 border-dashed border-border rounded-lg flex flex-col items-center gap-3 text-muted-foreground hover:bg-accent">
+              <Camera className="w-5 h-5 md:hidden" />
+              <button
+                type="button"
+                className="hidden md:inline-flex px-4 py-2 rounded-lg border border-border bg-background text-sm text-foreground"
+                onClick={() => fileGalleryRef.current?.click()}
+              >
+                Dosya Seç
+              </button>
+              <div className="flex md:hidden w-full flex-col sm:flex-row gap-2 px-4">
+                <button
+                  type="button"
+                  className="flex-1 py-2 rounded-lg border border-border bg-background text-sm text-foreground"
+                  onClick={() => fileCameraRef.current?.click()}
+                >
+                  Fotoğraf Çek
+                </button>
+                <button
+                  type="button"
+                  className="flex-1 py-2 rounded-lg border border-border bg-background text-sm text-foreground"
+                  onClick={() => fileGalleryRef.current?.click()}
+                >
+                  Galeriden Seç
+                </button>
+              </div>
+            </div>
           )}
           <input
-            ref={fileRef}
+            ref={fileCameraRef}
+            type="file"
+            accept="image/*"
+            capture="environment"
+            className="hidden"
+            onChange={async e => {
+              const file = e.target.files?.[0];
+              if (file) await handleImageUpload(file);
+              e.target.value = '';
+            }}
+          />
+          <input
+            ref={fileGalleryRef}
             type="file"
             accept="image/*"
             className="hidden"
