@@ -15,7 +15,9 @@ const port = process.env.PORT ? Number(process.env.PORT) : 3000;
 app.use(cors({
   origin: [
     'http://localhost:5173',
-    'https://tekrarla.pages.dev'
+    'https://tekrarla.pages.dev',
+    'https://tekrarla.app',
+    'https://www.tekrarla.app'
   ],
   credentials: true
 }));
