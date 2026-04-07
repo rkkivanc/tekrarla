@@ -1,5 +1,5 @@
 import { Outlet, useNavigate, useLocation } from 'react-router';
-import { Home, BookOpen, FileQuestion, Mic, GraduationCap, Users, LogOut } from 'lucide-react';
+import { Home, BookOpen, FileQuestion, Mic, GraduationCap, Users, LogOut, X } from 'lucide-react';
 import { type User } from '../store';
 import React, { useState, useEffect } from 'react';
 import {
@@ -12,6 +12,12 @@ import {
   AlertDialogTitle,
 } from './ui/alert-dialog';
 
+type BeforeInstallPromptEvent = Event & {
+  prompt: () => Promise<void>;
+};
+
+const PWA_DISMISSED_KEY = 'pwa-dismissed';
+
 export function Layout() {
   const navigate = useNavigate();
   const location = useLocation();
@@ -23,12 +29,39 @@ export function Layout() {
   });
   const [menuOpen, setMenuOpen] = useState(false);
   const [logoutDialogOpen, setLogoutDialogOpen] = useState(false);
+  const [deferredPrompt, setDeferredPrompt] = useState<BeforeInstallPromptEvent | null>(null);
 
   useEffect(() => {
     if (!user) {
       navigate('/login');
     }
   }, [user, navigate]);
+
+  useEffect(() => {
+    if (typeof window === 'undefined' || localStorage.getItem(PWA_DISMISSED_KEY)) return;
+
+    const onBeforeInstallPrompt = (e: Event) => {
+      e.preventDefault();
+      setDeferredPrompt(e as BeforeInstallPromptEvent);
+    };
+
+    window.addEventListener('beforeinstallprompt', onBeforeInstallPrompt);
+    return () => window.removeEventListener('beforeinstallprompt', onBeforeInstallPrompt);
+  }, []);
+
+  const dismissPwaBanner = () => {
+    localStorage.setItem(PWA_DISMISSED_KEY, '1');
+    setDeferredPrompt(null);
+  };
+
+  const handlePwaInstall = async () => {
+    if (!deferredPrompt) return;
+    try {
+      await deferredPrompt.prompt();
+    } finally {
+      dismissPwaBanner();
+    }
+  };
 
   if (!user) {
     return null;
@@ -78,6 +111,33 @@ export function Layout() {
           </button>
         </div>
       </header>
+
+      {deferredPrompt && (
+        <div
+          className="bg-card border-b border-border px-4 py-3 flex items-center justify-between gap-3 shrink-0"
+          role="region"
+          aria-label="Uygulamayı yükle"
+        >
+          <p className="text-sm text-foreground flex-1 min-w-0">Tekrarla&apos;yı ana ekrana ekle</p>
+          <div className="flex items-center gap-2 shrink-0">
+            <button
+              type="button"
+              onClick={handlePwaInstall}
+              className="px-3 py-1.5 rounded-lg text-sm font-medium bg-primary text-primary-foreground hover:opacity-90"
+            >
+              Ekle
+            </button>
+            <button
+              type="button"
+              onClick={dismissPwaBanner}
+              className="p-1.5 rounded-lg text-muted-foreground hover:bg-accent hover:text-foreground"
+              aria-label="Kapat"
+            >
+              <X className="w-5 h-5" />
+            </button>
+          </div>
+        </div>
+      )}
 
       <AlertDialog open={logoutDialogOpen} onOpenChange={setLogoutDialogOpen}>
         <AlertDialogContent>
