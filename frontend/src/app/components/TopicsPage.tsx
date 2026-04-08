@@ -1,6 +1,6 @@
 import React from 'react';
 import { useState, useRef, useEffect } from 'react';
-import { Plus, X, BookOpen, Camera } from 'lucide-react';
+import { Plus, X, BookOpen, Camera, Calendar } from 'lucide-react';
 import type { Topic } from '../store';
 import { api } from '../api';
 import imageCompression from 'browser-image-compression';
@@ -14,6 +14,14 @@ import {
   AlertDialogTitle,
 } from './ui/alert-dialog';
 import { Button } from './ui/button';
+import {
+  Dialog,
+  DialogContent,
+  DialogFooter,
+  DialogHeader,
+  DialogTitle,
+} from './ui/dialog';
+import { isAxiosError } from 'axios';
 
 type TopicRow = {
   id: string;
@@ -23,7 +31,10 @@ type TopicRow = {
   created_at: string;
   next_review_at: string | null;
   review_count: number;
+  last_result?: string | null;
 };
+
+type TopicWithMeta = Topic & { lastResult?: string | null };
 
 function nextReviewAtFromOffsets(days: number, hours: number, minutes: number): string {
   const d0 = Number.isFinite(days) ? Math.floor(days) : 0;
@@ -35,7 +46,7 @@ function nextReviewAtFromOffsets(days: number, hours: number, minutes: number): 
   return new Date(Date.now() + d * 86_400_000 + h * 3_600_000 + m * 60_000).toISOString();
 }
 
-function rowToTopic(row: TopicRow): Topic {
+function rowToTopic(row: TopicRow): TopicWithMeta {
   return {
     id: row.id,
     title: row.title,
@@ -44,11 +55,12 @@ function rowToTopic(row: TopicRow): Topic {
     createdAt: row.created_at,
     nextReviewAt: row.next_review_at ?? new Date().toISOString(),
     reviewCount: row.review_count,
+    lastResult: row.last_result ?? undefined,
   };
 }
 
 export function TopicsPage() {
-  const [topics, setTopics] = useState<Topic[]>([]);
+  const [topics, setTopics] = useState<TopicWithMeta[]>([]);
   const [showForm, setShowForm] = useState(false);
   const [title, setTitle] = useState('');
   const [notes, setNotes] = useState('');
@@ -60,6 +72,11 @@ export function TopicsPage() {
   const [topicDays, setTopicDays] = useState(3);
   const [topicHours, setTopicHours] = useState(0);
   const [topicMinutes, setTopicMinutes] = useState(0);
+  const [topicReviewDialogOpen, setTopicReviewDialogOpen] = useState(false);
+  const [topicReviewTargetId, setTopicReviewTargetId] = useState<string | null>(null);
+  const [topicReviewDays, setTopicReviewDays] = useState(1);
+  const [topicReviewHours, setTopicReviewHours] = useState(0);
+  const [topicReviewMinutes, setTopicReviewMinutes] = useState(0);
 
   useEffect(() => {
     let cancelled = false;
@@ -121,6 +138,40 @@ export function TopicsPage() {
       toast.success('Konu notu eklendi!');
     } catch {
       toast.error('Konu kaydedilemedi');
+    }
+  };
+
+  const openTopicReviewDialog = (topicId: string) => {
+    setTopicReviewTargetId(topicId);
+    setTopicReviewDays(1);
+    setTopicReviewHours(0);
+    setTopicReviewMinutes(0);
+    setTopicReviewDialogOpen(true);
+  };
+
+  const handleSaveTopicReviewDate = async () => {
+    if (!topicReviewTargetId) return;
+    const d0 = Number.isFinite(topicReviewDays) ? Math.floor(topicReviewDays) : 1;
+    const h0 = Number.isFinite(topicReviewHours) ? Math.floor(topicReviewHours) : 0;
+    const m0 = Number.isFinite(topicReviewMinutes) ? Math.floor(topicReviewMinutes) : 0;
+    const days = Math.min(365, Math.max(0, d0));
+    const hours = Math.min(23, Math.max(0, h0));
+    const minutes = Math.min(59, Math.max(0, m0));
+    try {
+      const { data } = await api.patch<TopicRow>(`/topics/${topicReviewTargetId}/review-date`, {
+        days,
+        hours,
+        minutes,
+      });
+      const updated = rowToTopic(data);
+      setTopics(prev => prev.map(x => (x.id === updated.id ? updated : x)));
+      setTopicReviewDialogOpen(false);
+      setTopicReviewTargetId(null);
+      toast.success('Tekrar zamanı güncellendi');
+    } catch (e) {
+      console.error(e);
+      const msg = isAxiosError(e) ? (e.response?.data as { error?: string })?.error : undefined;
+      toast.error(msg ?? 'Tekrar zamanı güncellenemedi');
     }
   };
 
@@ -268,8 +319,14 @@ export function TopicsPage() {
               <button onClick={() => setExpandedId(expandedId === t.id ? null : t.id)} className="w-full p-4 text-left flex items-center justify-between">
                 <div>
                   <h3>{t.title}</h3>
-                  <span className="text-xs text-muted-foreground">
+                  <span className="text-xs text-muted-foreground block">
                     Tekrar: {new Date(t.nextReviewAt).toLocaleDateString('tr-TR')} · {t.reviewCount} tekrar
+                    {t.lastResult === 'understood' && (
+                      <span className="block mt-0.5">Son tekrar: Anladım ✓</span>
+                    )}
+                    {t.lastResult === 'not_understood' && (
+                      <span className="block mt-0.5">Son tekrar: Anlamadım ✗</span>
+                    )}
                   </span>
                 </div>
                 <BookOpen className="w-5 h-5 text-muted-foreground" />
@@ -278,15 +335,82 @@ export function TopicsPage() {
                 <div className="px-4 pb-4 border-t border-border pt-3">
                   <p className="whitespace-pre-wrap text-muted-foreground">{t.notes}</p>
                   {t.imageUrl && <img src={t.imageUrl} alt="Not" className="mt-3 rounded-lg max-h-48 object-contain" />}
-                  <button type="button" onClick={() => setIdToDelete(t.id)} className="mt-3 text-sm text-destructive hover:underline">
-                    Sil
-                  </button>
+                  <div className="mt-3 flex items-center gap-3">
+                    <button
+                      type="button"
+                      onClick={() => openTopicReviewDialog(t.id)}
+                      className="inline-flex items-center justify-center rounded-lg border border-border bg-background p-2 text-foreground hover:bg-accent"
+                      aria-label="Tekrar zamanını ayarla"
+                    >
+                      <Calendar className="w-4 h-4" />
+                    </button>
+                    <button type="button" onClick={() => setIdToDelete(t.id)} className="text-sm text-destructive hover:underline">
+                      Sil
+                    </button>
+                  </div>
                 </div>
               )}
             </div>
           ))}
         </div>
       )}
+
+      <Dialog
+        open={topicReviewDialogOpen}
+        onOpenChange={open => {
+          setTopicReviewDialogOpen(open);
+          if (!open) setTopicReviewTargetId(null);
+        }}
+      >
+        <DialogContent className="sm:max-w-md">
+          <DialogHeader>
+            <DialogTitle>Tekrar Zamanını Ayarla</DialogTitle>
+          </DialogHeader>
+          <div className="grid gap-3 py-2">
+            <label className="flex flex-col gap-1 text-sm">
+              <span className="text-muted-foreground">Gün</span>
+              <input
+                type="number"
+                min={0}
+                max={365}
+                value={topicReviewDays}
+                onChange={e => setTopicReviewDays(Number(e.target.value))}
+                className="rounded-md border border-input bg-background px-3 py-2 text-sm"
+              />
+            </label>
+            <label className="flex flex-col gap-1 text-sm">
+              <span className="text-muted-foreground">Saat</span>
+              <input
+                type="number"
+                min={0}
+                max={23}
+                value={topicReviewHours}
+                onChange={e => setTopicReviewHours(Number(e.target.value))}
+                className="rounded-md border border-input bg-background px-3 py-2 text-sm"
+              />
+            </label>
+            <label className="flex flex-col gap-1 text-sm">
+              <span className="text-muted-foreground">Dakika</span>
+              <input
+                type="number"
+                min={0}
+                max={59}
+                value={topicReviewMinutes}
+                onChange={e => setTopicReviewMinutes(Number(e.target.value))}
+                className="rounded-md border border-input bg-background px-3 py-2 text-sm"
+              />
+            </label>
+          </div>
+          <DialogFooter>
+            <Button type="button" variant="outline" onClick={() => setTopicReviewDialogOpen(false)}>
+              İptal
+            </Button>
+            <Button type="button" onClick={() => void handleSaveTopicReviewDate()}>
+              Kaydet
+            </Button>
+          </DialogFooter>
+        </DialogContent>
+      </Dialog>
 
       <AlertDialog open={idToDelete !== null} onOpenChange={(open) => { if (!open) setIdToDelete(null); }}>
         <AlertDialogContent>

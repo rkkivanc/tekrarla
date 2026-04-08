@@ -14,6 +14,7 @@ type QuestionRow = {
   review_count: number;
   solved: boolean;
   deleted: boolean;
+  last_result?: string | null;
 };
 
 function nextReviewAtForDifficulty(difficulty: string): Date {
@@ -138,6 +139,7 @@ export async function updateQuestion(req: Request, res: Response): Promise<void>
     solved?: unknown;
     review_count?: unknown;
     next_review_at?: unknown;
+    last_result?: unknown;
   };
 
   if (typeof body.solved !== 'boolean') {
@@ -153,6 +155,15 @@ export async function updateQuestion(req: Request, res: Response): Promise<void>
     return;
   }
 
+  let lastResultParam: string | null = null;
+  if (body.last_result !== undefined) {
+    if (body.last_result !== 'solved' && body.last_result !== 'failed') {
+      res.status(400).json({ error: "last_result must be 'solved' or 'failed'" });
+      return;
+    }
+    lastResultParam = body.last_result;
+  }
+
   const nextReviewAt = new Date(body.next_review_at);
   if (Number.isNaN(nextReviewAt.getTime())) {
     res.status(400).json({ error: 'next_review_at must be a valid ISO date' });
@@ -162,11 +173,12 @@ export async function updateQuestion(req: Request, res: Response): Promise<void>
   try {
     const result = await pool.query<QuestionRow>(
       `UPDATE questions
-       SET solved = $3, review_count = $4, next_review_at = $5
+       SET solved = $3, review_count = $4, next_review_at = $5,
+           last_result = COALESCE($6, last_result)
        WHERE id = $1 AND user_id = $2
        RETURNING id, user_id, image_url, answer_image_url, answer_text, difficulty, subject,
-                 created_at, next_review_at, review_count, solved, deleted`,
-      [id, userId, body.solved, body.review_count, nextReviewAt]
+                 created_at, next_review_at, review_count, solved, deleted, last_result`,
+      [id, userId, body.solved, body.review_count, nextReviewAt, lastResultParam]
     );
     const row = result.rows[0];
     if (!row) {

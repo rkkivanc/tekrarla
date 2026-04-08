@@ -20,6 +20,8 @@ import {
   AlertDialogTitle,
 } from './ui/alert-dialog';
 import { Button, buttonVariants } from './ui/button';
+import { Input } from './ui/input';
+import { Label } from './ui/label';
 import { cn } from './ui/utils';
 
 type ReviewItem = { type: 'question'; data: Question } | { type: 'topic'; data: Topic };
@@ -66,7 +68,14 @@ function mapQuestionRow(row: QuestionApiRow): Question {
 
 type EarlyReviewAfterPatchCtx =
   | { type: 'question'; id: string; solved: boolean; reviewCount: number; difficulty: Question['difficulty'] }
-  | { type: 'topic'; id: string; reviewCount: number };
+  | { type: 'topic'; id: string; reviewCount: number; lastResult: 'understood' | 'not_understood' };
+
+function intervalDaysForDifficulty(
+  difficulty: Question['difficulty'],
+  settings: DifficultyIntervalSettings,
+): number {
+  return difficulty === 'hard' ? settings.hard : difficulty === 'medium' ? settings.medium : settings.easy;
+}
 
 function mapTopicRow(row: TopicApiRow): Topic {
   return {
@@ -89,6 +98,12 @@ export function ReviewPage() {
   const [flipped, setFlipped] = useState(false);
   const [isCurrentEarlyReview, setIsCurrentEarlyReview] = useState(false);
   const [earlyReviewDialogOpen, setEarlyReviewDialogOpen] = useState(false);
+  const [solvedDialogOpen, setSolvedDialogOpen] = useState(false);
+  const [failedDialogOpen, setFailedDialogOpen] = useState(false);
+  const [failedFlow, setFailedFlow] = useState<'question' | 'topic' | null>(null);
+  const [failedDays, setFailedDays] = useState(1);
+  const [failedHours, setFailedHours] = useState(0);
+  const [failedMinutes, setFailedMinutes] = useState(0);
   const [deleteDialogOpen, setDeleteDialogOpen] = useState(false);
   const [difficultyIntervals, setDifficultyIntervals] = useState<DifficultyIntervalSettings>({
     hard: 1,
@@ -165,59 +180,131 @@ export function ReviewPage() {
 
   const current = items[currentIndex];
 
-  const handleSolved = async (solved: boolean, earlyReview = false) => {
-    if (!current) return;
-    const isEarly = earlyReview || isCurrentEarlyReview;
+  const openFailedDialog = (flow: 'question' | 'topic') => {
+    setFailedFlow(flow);
+    setFailedDays(1);
+    setFailedHours(0);
+    setFailedMinutes(0);
+    setFailedDialogOpen(true);
+  };
+
+  const confirmFailedSchedule = () => {
+    if (!failedFlow) return;
+    const flow = failedFlow;
+    const d = Math.max(0, Math.floor(Number(failedDays)) || 0);
+    const h = Math.max(0, Math.floor(Number(failedHours)) || 0);
+    const m = Math.max(0, Math.floor(Number(failedMinutes)) || 0);
+    const ms = d * 86_400_000 + h * 3_600_000 + m * 60_000;
+    const iso = new Date(Date.now() + ms).toISOString();
+    setFailedDialogOpen(false);
+    setFailedFlow(null);
+    const early = isCurrentEarlyReview;
+    if (flow === 'question') {
+      void handleSolved(false, { earlyReview: early, customNextReviewAt: iso });
+    } else {
+      void handleTopicReview('not_understood', { earlyReview: early, customNextReviewAt: iso });
+    }
+  };
+
+  const handleSolved = async (
+    solved: boolean,
+    opts?: { earlyReview?: boolean; customNextReviewAt?: string },
+  ) => {
+    if (!current || current.type !== 'question') return;
+    const isEarly = opts?.earlyReview ?? isCurrentEarlyReview;
+    const customNext = opts?.customNextReviewAt;
+    const q = current.data;
     try {
       if (isEarly) {
-        if (current.type === 'question') {
-          const q = current.data;
-          const preserved = q.nextReviewAt;
-          await api.patch(`/questions/${q.id}`, {
-            solved,
-            review_count: q.reviewCount + 1,
-            next_review_at: preserved,
-          });
-          earlyReviewCtxRef.current = {
-            type: 'question',
-            id: q.id,
-            solved,
-            reviewCount: q.reviewCount + 1,
-            difficulty: q.difficulty,
-          };
-        } else {
-          const t = current.data;
-          const preserved = t.nextReviewAt;
-          await api.patch(`/topics/${t.id}`, {
-            review_count: t.reviewCount + 1,
-            next_review_at: preserved,
-          });
-          earlyReviewCtxRef.current = {
-            type: 'topic',
-            id: t.id,
-            reviewCount: t.reviewCount + 1,
-          };
-        }
+        const preserved = q.nextReviewAt;
+        const nextAt = solved ? preserved : (customNext ?? preserved);
+        await api.patch(`/questions/${q.id}`, {
+          solved,
+          review_count: q.reviewCount + 1,
+          next_review_at: nextAt,
+          last_result: solved ? 'solved' : 'failed',
+        });
+        earlyReviewCtxRef.current = {
+          type: 'question',
+          id: q.id,
+          solved,
+          reviewCount: q.reviewCount + 1,
+          difficulty: q.difficulty,
+        };
         setEarlyReviewDialogOpen(true);
         return;
       }
 
-      if (current.type === 'question') {
-        const q = current.data;
+      if (solved) {
         await api.patch(`/questions/${q.id}`, {
-          solved,
+          solved: true,
           review_count: q.reviewCount + 1,
           next_review_at: getNextReviewDate(q.difficulty, difficultyIntervals),
+          last_result: 'solved',
         });
       } else {
-        const t = current.data;
-        const nextReviewAt = new Date(Date.now() + 3 * 86_400_000).toISOString();
-        await api.patch(`/topics/${t.id}`, {
-          review_count: t.reviewCount + 1,
-          next_review_at: nextReviewAt,
+        if (!customNext) {
+          toast.error('Geçerli bir tekrar tarihi gerekli');
+          return;
+        }
+        await api.patch(`/questions/${q.id}`, {
+          solved: false,
+          review_count: q.reviewCount + 1,
+          next_review_at: customNext,
+          last_result: 'failed',
         });
       }
       toast.success(solved ? 'Harika! Başardın! 🎉' : 'Tekrar zamanı ayarlandı');
+      next();
+    } catch (e) {
+      console.error(e);
+      toast.error('Güncelleme başarısız');
+    }
+  };
+
+  const handleTopicReview = async (
+    lastResult: 'understood' | 'not_understood',
+    opts?: { earlyReview?: boolean; customNextReviewAt?: string },
+  ) => {
+    if (!current || current.type !== 'topic') return;
+    const isEarly = opts?.earlyReview ?? isCurrentEarlyReview;
+    const customNext = opts?.customNextReviewAt;
+    const t = current.data;
+    try {
+      if (isEarly) {
+        const preserved = t.nextReviewAt;
+        const nextAt = lastResult === 'understood' ? preserved : (customNext ?? preserved);
+        await api.patch(`/topics/${t.id}`, {
+          review_count: t.reviewCount + 1,
+          next_review_at: nextAt,
+          last_result: lastResult,
+        });
+        earlyReviewCtxRef.current = {
+          type: 'topic',
+          id: t.id,
+          reviewCount: t.reviewCount + 1,
+          lastResult,
+        };
+        setEarlyReviewDialogOpen(true);
+        return;
+      }
+
+      let nextReviewAt: string;
+      if (lastResult === 'understood') {
+        nextReviewAt = new Date(Date.now() + 3 * 86_400_000).toISOString();
+      } else {
+        if (!customNext) {
+          toast.error('Geçerli bir tekrar tarihi gerekli');
+          return;
+        }
+        nextReviewAt = customNext;
+      }
+      await api.patch(`/topics/${t.id}`, {
+        review_count: t.reviewCount + 1,
+        next_review_at: nextReviewAt,
+        last_result: lastResult,
+      });
+      toast.success(lastResult === 'understood' ? 'Harika! Başardın! 🎉' : 'Tekrar zamanı ayarlandı');
       next();
     } catch (e) {
       console.error(e);
@@ -245,12 +332,14 @@ export function ReviewPage() {
           solved: ctx.solved,
           review_count: ctx.reviewCount,
           next_review_at: getNextReviewDate(ctx.difficulty, difficultyIntervals),
+          last_result: ctx.solved ? 'solved' : 'failed',
         });
       } else {
         const nextReviewAt = new Date(Date.now() + 3 * 86_400_000).toISOString();
         await api.patch(`/topics/${ctx.id}`, {
           review_count: ctx.reviewCount,
           next_review_at: nextReviewAt,
+          last_result: ctx.lastResult,
         });
       }
       setEarlyReviewDialogOpen(false);
@@ -349,6 +438,83 @@ export function ReviewPage() {
         </AlertDialogContent>
       </AlertDialog>
 
+      <AlertDialog open={solvedDialogOpen} onOpenChange={setSolvedDialogOpen}>
+        <AlertDialogContent>
+          <AlertDialogHeader>
+            <AlertDialogTitle>Harika! 🎉</AlertDialogTitle>
+            <AlertDialogDescription>
+              {current?.type === 'question'
+                ? `Bir sonraki tekrar ${intervalDaysForDifficulty(current.data.difficulty, difficultyIntervals)} gün sonra ayarlandı`
+                : 'Bir sonraki tekrar ayarlandı'}
+            </AlertDialogDescription>
+          </AlertDialogHeader>
+          <AlertDialogFooter>
+            <Button
+              type="button"
+              onClick={() => {
+                setSolvedDialogOpen(false);
+                void handleSolved(true, { earlyReview: isCurrentEarlyReview });
+              }}
+            >
+              Tamam
+            </Button>
+          </AlertDialogFooter>
+        </AlertDialogContent>
+      </AlertDialog>
+
+      <AlertDialog
+        open={failedDialogOpen}
+        onOpenChange={open => {
+          setFailedDialogOpen(open);
+          if (!open) setFailedFlow(null);
+        }}
+      >
+        <AlertDialogContent>
+          <AlertDialogHeader>
+            <AlertDialogTitle>Sorun değil!</AlertDialogTitle>
+            <AlertDialogDescription>Bir sonraki tekrar ne zaman olsun?</AlertDialogDescription>
+          </AlertDialogHeader>
+          <div className="grid gap-3 py-2">
+            <div className="grid gap-1.5">
+              <Label htmlFor="failed-days">Gün</Label>
+              <Input
+                id="failed-days"
+                type="number"
+                min={0}
+                value={failedDays}
+                onChange={e => setFailedDays(Number(e.target.value))}
+              />
+            </div>
+            <div className="grid gap-1.5">
+              <Label htmlFor="failed-hours">Saat</Label>
+              <Input
+                id="failed-hours"
+                type="number"
+                min={0}
+                value={failedHours}
+                onChange={e => setFailedHours(Number(e.target.value))}
+              />
+            </div>
+            <div className="grid gap-1.5">
+              <Label htmlFor="failed-minutes">Dakika</Label>
+              <Input
+                id="failed-minutes"
+                type="number"
+                min={0}
+                value={failedMinutes}
+                onChange={e => setFailedMinutes(Number(e.target.value))}
+              />
+            </div>
+          </div>
+          <AlertDialogFooter>
+            <AlertDialogCancel type="button">İptal</AlertDialogCancel>
+            <Button type="button" onClick={() => confirmFailedSchedule()}>
+              Tekrar Ayarla
+            </Button>
+          </AlertDialogFooter>
+        </AlertDialogContent>
+      </AlertDialog>
+
       {items.length === 0 ? (
         <div className="flex flex-col items-center justify-center py-20 text-center">
           <div className="w-20 h-20 rounded-full bg-green-50 flex items-center justify-center mb-4">
@@ -395,14 +561,45 @@ export function ReviewPage() {
                 {showAnswer && (
                   <div className="w-full space-y-3">
                     <div className="flex gap-3">
-                      <button onClick={() => handleSolved(false, isCurrentEarlyReview)} className="flex flex-1 items-center justify-center gap-2 rounded-xl bg-red-100 py-3 text-red-700">
-                        <X className="h-5 w-5" />
-                        Çözemedim
-                      </button>
-                      <button onClick={() => handleSolved(true, isCurrentEarlyReview)} className="flex flex-1 items-center justify-center gap-2 rounded-xl bg-green-100 py-3 text-green-700">
-                        <Check className="h-5 w-5" />
-                        Çözdüm
-                      </button>
+                      {current.type === 'question' ? (
+                        <>
+                          <button
+                            type="button"
+                            onClick={() => openFailedDialog('question')}
+                            className="flex flex-1 items-center justify-center gap-2 rounded-xl bg-red-100 py-3 text-red-700"
+                          >
+                            <X className="h-5 w-5" />
+                            Çözemedim
+                          </button>
+                          <button
+                            type="button"
+                            onClick={() => setSolvedDialogOpen(true)}
+                            className="flex flex-1 items-center justify-center gap-2 rounded-xl bg-green-100 py-3 text-green-700"
+                          >
+                            <Check className="h-5 w-5" />
+                            Çözdüm
+                          </button>
+                        </>
+                      ) : (
+                        <>
+                          <button
+                            type="button"
+                            onClick={() => openFailedDialog('topic')}
+                            className="flex flex-1 items-center justify-center gap-2 rounded-xl bg-red-100 py-3 text-red-700"
+                          >
+                            <X className="h-5 w-5" />
+                            Anlamadım
+                          </button>
+                          <button
+                            type="button"
+                            onClick={() => void handleTopicReview('understood')}
+                            className="flex flex-1 items-center justify-center gap-2 rounded-xl bg-green-100 py-3 text-green-700"
+                          >
+                            <Check className="h-5 w-5" />
+                            Anladım
+                          </button>
+                        </>
+                      )}
                     </div>
                     {current.type === 'question' && (
                       <button

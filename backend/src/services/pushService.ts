@@ -9,10 +9,11 @@ if (publicKey && privateKey) {
   webpush.setVapidDetails('mailto:kagan@tekrarla.app', publicKey, privateKey);
 }
 
-function currentHHMM(): string {
+/** Şu anki anın UTC saati HH:MM (notification_time DB’de UTC olarak saklanıyor). */
+function currentUtcHHMM(): string {
   const d = new Date();
-  const h = String(d.getHours()).padStart(2, '0');
-  const m = String(d.getMinutes()).padStart(2, '0');
+  const h = String(d.getUTCHours()).padStart(2, '0');
+  const m = String(d.getUTCMinutes()).padStart(2, '0');
   return `${h}:${m}`;
 }
 
@@ -32,7 +33,7 @@ export async function sendDailyNotifications(): Promise<void> {
     return;
   }
 
-  const hhmm = currentHHMM();
+  const hhmmUtc = currentUtcHHMM();
 
   try {
     const usersResult = await pool.query<{ id: string; subscription: unknown }>(
@@ -41,7 +42,7 @@ export async function sendDailyNotifications(): Promise<void> {
        INNER JOIN push_subscriptions ps ON ps.user_id = u.id
        WHERE u.notification_time IS NOT NULL
          AND to_char(u.notification_time::time, 'HH24:MI') = $1`,
-      [hhmm]
+      [hhmmUtc]
     );
 
     for (const row of usersResult.rows) {
@@ -79,12 +80,7 @@ export async function sendDailyNotifications(): Promise<void> {
       }
 
       const title = 'Tekrarla';
-      const body =
-        dueQuestions > 0 && dueTopics > 0
-          ? `${dueQuestions} soru ve ${dueTopics} konu tekrarı bekliyor.`
-          : dueQuestions > 0
-            ? `${dueQuestions} soru tekrarı bekliyor.`
-            : `${dueTopics} konu tekrarı bekliyor.`;
+      const body = `${dueQuestions} soru, ${dueTopics} konu tekrarı bekliyor.`;
 
       try {
         await sendPushNotification(sub, title, body);

@@ -49,9 +49,12 @@ type QuestionApiRow = {
   review_count: number;
   solved: boolean;
   deleted: boolean;
+  last_result?: string | null;
 };
 
-function mapRowToQuestion(row: QuestionApiRow): Question {
+type QuestionWithMeta = Question & { lastResult?: string | null };
+
+function mapRowToQuestion(row: QuestionApiRow): QuestionWithMeta {
   return {
     id: row.id,
     imageUrl: row.image_url,
@@ -64,11 +67,12 @@ function mapRowToQuestion(row: QuestionApiRow): Question {
     reviewCount: row.review_count,
     solved: row.solved,
     deleted: row.deleted,
+    lastResult: row.last_result ?? undefined,
   };
 }
 
 export function QuestionsPage() {
-  const [questions, setQuestions] = useState<Question[]>([]);
+  const [questions, setQuestions] = useState<QuestionWithMeta[]>([]);
   const [showForm, setShowForm] = useState(false);
   const [questionImg, setQuestionImg] = useState('');
   const [answerImg, setAnswerImg] = useState('');
@@ -483,6 +487,12 @@ export function QuestionsPage() {
                 </div>
                 <div className="text-xs text-muted-foreground mt-2">
                   Tekrar: {new Date(q.nextReviewAt).toLocaleDateString('tr-TR')} · {q.reviewCount} tekrar
+                  {q.lastResult === 'solved' && (
+                    <span className="block mt-0.5">Son tekrar: Çözdüm ✓</span>
+                  )}
+                  {q.lastResult === 'failed' && (
+                    <span className="block mt-0.5">Son tekrar: Çözemedim ✗</span>
+                  )}
                 </div>
               </div>
             </div>
