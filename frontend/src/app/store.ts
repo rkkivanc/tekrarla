@@ -66,7 +66,13 @@ export function getNextReviewDate(difficulty: 'easy' | 'medium' | 'hard'): strin
 }
 
 export function isDueForReview(dateStr: string): boolean {
-  return new Date(dateStr) <= new Date();
+  const reviewDate = new Date(dateStr);
+  const today = new Date();
+
+  reviewDate.setHours(0, 0, 0, 0);
+  today.setHours(0, 0, 0, 0);
+
+  return reviewDate <= today;
 }
 
 export function fileToDataUrl(file: File): Promise<string> {
