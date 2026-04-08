@@ -98,7 +98,11 @@ export function ReviewPage() {
   const [flipped, setFlipped] = useState(false);
   const [isCurrentEarlyReview, setIsCurrentEarlyReview] = useState(false);
   const [earlyReviewDialogOpen, setEarlyReviewDialogOpen] = useState(false);
-  const [solvedDialogOpen, setSolvedDialogOpen] = useState(false);
+  const [positiveIntervalDialogOpen, setPositiveIntervalDialogOpen] = useState(false);
+  const [positiveIntervalFor, setPositiveIntervalFor] = useState<'question' | 'topic' | null>(null);
+  const [positiveDays, setPositiveDays] = useState(3);
+  const [positiveHours, setPositiveHours] = useState(0);
+  const [positiveMinutes, setPositiveMinutes] = useState(0);
   const [failedDialogOpen, setFailedDialogOpen] = useState(false);
   const [failedFlow, setFailedFlow] = useState<'question' | 'topic' | null>(null);
   const [failedDays, setFailedDays] = useState(1);
@@ -188,6 +192,37 @@ export function ReviewPage() {
     setFailedDialogOpen(true);
   };
 
+  const openPositiveIntervalDialog = (forKind: 'question' | 'topic') => {
+    if (forKind === 'question') {
+      if (!current || current.type !== 'question') return;
+      setPositiveDays(intervalDaysForDifficulty(current.data.difficulty, difficultyIntervals));
+    } else {
+      setPositiveDays(3);
+    }
+    setPositiveHours(0);
+    setPositiveMinutes(0);
+    setPositiveIntervalFor(forKind);
+    setPositiveIntervalDialogOpen(true);
+  };
+
+  const confirmPositiveInterval = () => {
+    if (!positiveIntervalFor) return;
+    const kind = positiveIntervalFor;
+    const d = Math.max(0, Math.floor(Number(positiveDays)) || 0);
+    const h = Math.max(0, Math.floor(Number(positiveHours)) || 0);
+    const m = Math.max(0, Math.floor(Number(positiveMinutes)) || 0);
+    const ms = d * 86_400_000 + h * 3_600_000 + m * 60_000;
+    const iso = new Date(Date.now() + ms).toISOString();
+    setPositiveIntervalDialogOpen(false);
+    setPositiveIntervalFor(null);
+    const early = isCurrentEarlyReview;
+    if (kind === 'question') {
+      void handleSolved(true, { earlyReview: early, customNextReviewAt: iso });
+    } else {
+      void handleTopicReview('understood', { earlyReview: early, customNextReviewAt: iso });
+    }
+  };
+
   const confirmFailedSchedule = () => {
     if (!failedFlow) return;
     const flow = failedFlow;
@@ -217,7 +252,7 @@ export function ReviewPage() {
     try {
       if (isEarly) {
         const preserved = q.nextReviewAt;
-        const nextAt = solved ? preserved : (customNext ?? preserved);
+        const nextAt = customNext ?? preserved;
         await api.patch(`/questions/${q.id}`, {
           solved,
           review_count: q.reviewCount + 1,
@@ -236,10 +271,11 @@ export function ReviewPage() {
       }
 
       if (solved) {
+        const nextAt = customNext ?? getNextReviewDate(q.difficulty, difficultyIntervals);
         await api.patch(`/questions/${q.id}`, {
           solved: true,
           review_count: q.reviewCount + 1,
-          next_review_at: getNextReviewDate(q.difficulty, difficultyIntervals),
+          next_review_at: nextAt,
           last_result: 'solved',
         });
       } else {
@@ -273,7 +309,7 @@ export function ReviewPage() {
     try {
       if (isEarly) {
         const preserved = t.nextReviewAt;
-        const nextAt = lastResult === 'understood' ? preserved : (customNext ?? preserved);
+        const nextAt = customNext ?? preserved;
         await api.patch(`/topics/${t.id}`, {
           review_count: t.reviewCount + 1,
           next_review_at: nextAt,
@@ -291,7 +327,8 @@ export function ReviewPage() {
 
       let nextReviewAt: string;
       if (lastResult === 'understood') {
-        nextReviewAt = new Date(Date.now() + 3 * 86_400_000).toISOString();
+        nextReviewAt =
+          customNext ?? new Date(Date.now() + 3 * 86_400_000).toISOString();
       } else {
         if (!customNext) {
           toast.error('Geçerli bir tekrar tarihi gerekli');
@@ -438,24 +475,52 @@ export function ReviewPage() {
         </AlertDialogContent>
       </AlertDialog>
 
-      <AlertDialog open={solvedDialogOpen} onOpenChange={setSolvedDialogOpen}>
+      <AlertDialog
+        open={positiveIntervalDialogOpen}
+        onOpenChange={open => {
+          setPositiveIntervalDialogOpen(open);
+          if (!open) setPositiveIntervalFor(null);
+        }}
+      >
         <AlertDialogContent>
           <AlertDialogHeader>
-            <AlertDialogTitle>Harika! 🎉</AlertDialogTitle>
-            <AlertDialogDescription>
-              {current?.type === 'question'
-                ? `Bir sonraki tekrar ${intervalDaysForDifficulty(current.data.difficulty, difficultyIntervals)} gün sonra ayarlandı`
-                : 'Bir sonraki tekrar ayarlandı'}
-            </AlertDialogDescription>
+            <AlertDialogTitle>Bir sonraki tekrar ne zaman olsun?</AlertDialogTitle>
           </AlertDialogHeader>
+          <div className="grid gap-3 py-2">
+            <div className="grid gap-1.5">
+              <Label htmlFor="positive-days">Gün</Label>
+              <Input
+                id="positive-days"
+                type="number"
+                min={0}
+                value={positiveDays}
+                onChange={e => setPositiveDays(Number(e.target.value))}
+              />
+            </div>
+            <div className="grid gap-1.5">
+              <Label htmlFor="positive-hours">Saat</Label>
+              <Input
+                id="positive-hours"
+                type="number"
+                min={0}
+                value={positiveHours}
+                onChange={e => setPositiveHours(Number(e.target.value))}
+              />
+            </div>
+            <div className="grid gap-1.5">
+              <Label htmlFor="positive-minutes">Dakika</Label>
+              <Input
+                id="positive-minutes"
+                type="number"
+                min={0}
+                value={positiveMinutes}
+                onChange={e => setPositiveMinutes(Number(e.target.value))}
+              />
+            </div>
+          </div>
           <AlertDialogFooter>
-            <Button
-              type="button"
-              onClick={() => {
-                setSolvedDialogOpen(false);
-                void handleSolved(true, { earlyReview: isCurrentEarlyReview });
-              }}
-            >
+            <AlertDialogCancel type="button">İptal</AlertDialogCancel>
+            <Button type="button" onClick={() => confirmPositiveInterval()}>
               Tamam
             </Button>
           </AlertDialogFooter>
@@ -573,7 +638,7 @@ export function ReviewPage() {
                           </button>
                           <button
                             type="button"
-                            onClick={() => setSolvedDialogOpen(true)}
+                            onClick={() => openPositiveIntervalDialog('question')}
                             className="flex flex-1 items-center justify-center gap-2 rounded-xl bg-green-100 py-3 text-green-700"
                           >
                             <Check className="h-5 w-5" />
@@ -592,7 +657,7 @@ export function ReviewPage() {
                           </button>
                           <button
                             type="button"
-                            onClick={() => void handleTopicReview('understood')}
+                            onClick={() => openPositiveIntervalDialog('topic')}
                             className="flex flex-1 items-center justify-center gap-2 rounded-xl bg-green-100 py-3 text-green-700"
                           >
                             <Check className="h-5 w-5" />

@@ -321,12 +321,6 @@ export function TopicsPage() {
                   <h3>{t.title}</h3>
                   <span className="text-xs text-muted-foreground block">
                     Tekrar: {new Date(t.nextReviewAt).toLocaleDateString('tr-TR')} · {t.reviewCount} tekrar
-                    {t.lastResult === 'understood' && (
-                      <span className="block mt-0.5">Son tekrar: Anladım ✓</span>
-                    )}
-                    {t.lastResult === 'not_understood' && (
-                      <span className="block mt-0.5">Son tekrar: Anlamadım ✗</span>
-                    )}
                   </span>
                 </div>
                 <BookOpen className="w-5 h-5 text-muted-foreground" />
@@ -336,6 +330,9 @@ export function TopicsPage() {
                   <p className="whitespace-pre-wrap text-muted-foreground">{t.notes}</p>
                   {t.imageUrl && <img src={t.imageUrl} alt="Not" className="mt-3 rounded-lg max-h-48 object-contain" />}
                   <div className="mt-3 flex items-center gap-3">
+                    <button type="button" onClick={() => setIdToDelete(t.id)} className="text-sm text-destructive hover:underline">
+                      Sil
+                    </button>
                     <button
                       type="button"
                       onClick={() => openTopicReviewDialog(t.id)}
@@ -344,10 +341,12 @@ export function TopicsPage() {
                     >
                       <Calendar className="w-4 h-4" />
                     </button>
-                    <button type="button" onClick={() => setIdToDelete(t.id)} className="text-sm text-destructive hover:underline">
-                      Sil
-                    </button>
                   </div>
+                </div>
+              )}
+              {(t.lastResult === 'understood' || t.lastResult === 'not_understood') && (
+                <div className="px-4 pb-3 text-xs text-muted-foreground border-t border-border pt-2">
+                  {t.lastResult === 'understood' ? 'Son tekrar: Anladım ✓' : 'Son tekrar: Anlamadım ✗'}
                 </div>
               )}
             </div>

@@ -42,7 +42,7 @@ export async function getQuestions(req: Request, res: Response): Promise<void> {
   try {
     const result = await pool.query<QuestionRow>(
       `SELECT id, user_id, image_url, answer_image_url, answer_text, difficulty, subject,
-              created_at, next_review_at, review_count, solved, deleted
+              created_at, next_review_at, review_count, solved, deleted, last_result
        FROM questions
        WHERE user_id = $1 AND deleted = false`,
       [userId]

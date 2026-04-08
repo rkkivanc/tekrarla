@@ -487,14 +487,13 @@ export function QuestionsPage() {
                 </div>
                 <div className="text-xs text-muted-foreground mt-2">
                   Tekrar: {new Date(q.nextReviewAt).toLocaleDateString('tr-TR')} · {q.reviewCount} tekrar
-                  {q.lastResult === 'solved' && (
-                    <span className="block mt-0.5">Son tekrar: Çözdüm ✓</span>
-                  )}
-                  {q.lastResult === 'failed' && (
-                    <span className="block mt-0.5">Son tekrar: Çözemedim ✗</span>
-                  )}
                 </div>
               </div>
+              {(q.lastResult === 'solved' || q.lastResult === 'failed') && (
+                <div className="px-3 pb-3 text-xs text-muted-foreground border-t border-border pt-2">
+                  {q.lastResult === 'solved' ? 'Son tekrar: Çözdüm ✓' : 'Son tekrar: Çözemedim ✗'}
+                </div>
+              )}
             </div>
           ))}
         </div>
