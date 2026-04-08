@@ -31,6 +31,24 @@ function urlBase64ToUint8Array(base64String: string): ArrayBuffer {
   return outputArray.buffer.slice(outputArray.byteOffset, outputArray.byteOffset + outputArray.byteLength);
 }
 
+function localTimeToUTC(localTime: string): string {
+  const [hours, minutes] = localTime.split(':').map(Number);
+  const date = new Date();
+  date.setHours(hours, minutes, 0, 0);
+  const utcHours = date.getUTCHours().toString().padStart(2, '0');
+  const utcMinutes = date.getUTCMinutes().toString().padStart(2, '0');
+  return `${utcHours}:${utcMinutes}`;
+}
+
+function utcTimeToLocal(utcTime: string): string {
+  const [hours, minutes] = utcTime.split(':').map(Number);
+  const date = new Date();
+  date.setUTCHours(hours, minutes, 0, 0);
+  const localHours = date.getHours().toString().padStart(2, '0');
+  const localMinutes = date.getMinutes().toString().padStart(2, '0');
+  return `${localHours}:${localMinutes}`;
+}
+
 export function Dashboard() {
   const navigate = useNavigate();
   const [questions, setQuestions] = useState<any[]>([]);
@@ -105,7 +123,7 @@ export function Dashboard() {
         );
         if (cancelled) return;
         if (res.data.notificationTime) {
-          setNotificationTime(res.data.notificationTime);
+          setNotificationTime(utcTimeToLocal(res.data.notificationTime));
         }
         setHasSubscription(res.data.hasSubscription);
       } catch {
@@ -210,7 +228,7 @@ export function Dashboard() {
 
   async function updateNotificationTime() {
     try {
-      await api.patch('/notifications/time', { notification_time: notificationTime });
+      await api.patch('/notifications/time', { notification_time: localTimeToUTC(notificationTime) });
       toast.success('Bildirim saati güncellendi');
     } catch (err) {
       const msg = isAxiosError(err) ? (err.response?.data as { error?: string })?.error : undefined;
