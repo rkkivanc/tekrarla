@@ -1,6 +1,6 @@
 import React from 'react';
 import { useState, useRef, useEffect, useCallback } from 'react';
-import { Camera, Plus, X } from 'lucide-react';
+import { Calendar, Camera, Plus, X } from 'lucide-react';
 import imageCompression from 'browser-image-compression';
 import type { Question } from '../store';
 import { api } from '../api';
@@ -14,6 +14,18 @@ import {
   AlertDialogTitle,
 } from './ui/alert-dialog';
 import { Button } from './ui/button';
+import {
+  Dialog,
+  DialogContent,
+  DialogFooter,
+  DialogHeader,
+  DialogTitle,
+} from './ui/dialog';
+import { isAxiosError } from 'axios';
+
+type DifficultySettings = { hard: number; medium: number; easy: number };
+
+const DEFAULT_DIFFICULTY_SETTINGS: DifficultySettings = { hard: 1, medium: 3, easy: 5 };
 
 type QuestionApiRow = {
   id: string;
@@ -59,6 +71,12 @@ export function QuestionsPage() {
   const aCameraRef = useRef<HTMLInputElement>(null);
   const aGalleryRef = useRef<HTMLInputElement>(null);
   const [idToDelete, setIdToDelete] = useState<string | null>(null);
+  const [difficultySettings, setDifficultySettings] = useState<DifficultySettings>(DEFAULT_DIFFICULTY_SETTINGS);
+  const [reviewDialogOpen, setReviewDialogOpen] = useState(false);
+  const [reviewTargetId, setReviewTargetId] = useState<string | null>(null);
+  const [reviewDays, setReviewDays] = useState(1);
+  const [reviewHours, setReviewHours] = useState(0);
+  const [reviewMinutes, setReviewMinutes] = useState(0);
 
   const refreshQuestions = useCallback(async () => {
     try {
@@ -72,6 +90,23 @@ export function QuestionsPage() {
   useEffect(() => {
     refreshQuestions();
   }, [refreshQuestions]);
+
+  useEffect(() => {
+    let cancelled = false;
+    (async () => {
+      try {
+        const { data } = await api.get<DifficultySettings>('/settings/difficulty');
+        if (!cancelled && data && typeof data.hard === 'number' && typeof data.medium === 'number' && typeof data.easy === 'number') {
+          setDifficultySettings(data);
+        }
+      } catch {
+        if (!cancelled) setDifficultySettings(DEFAULT_DIFFICULTY_SETTINGS);
+      }
+    })();
+    return () => {
+      cancelled = true;
+    };
+  }, []);
 
   const handleImageUpload = async (file: File, setter: (url: string) => void) => {
     try {
@@ -117,6 +152,40 @@ export function QuestionsPage() {
     }
   };
 
+  const openReviewDialog = (questionId: string) => {
+    setReviewTargetId(questionId);
+    setReviewDays(1);
+    setReviewHours(0);
+    setReviewMinutes(0);
+    setReviewDialogOpen(true);
+  };
+
+  const handleSaveReviewDate = async () => {
+    if (!reviewTargetId) return;
+    const d0 = Number.isFinite(reviewDays) ? Math.floor(reviewDays) : 1;
+    const h0 = Number.isFinite(reviewHours) ? Math.floor(reviewHours) : 0;
+    const m0 = Number.isFinite(reviewMinutes) ? Math.floor(reviewMinutes) : 0;
+    const days = Math.min(365, Math.max(0, d0));
+    const hours = Math.min(23, Math.max(0, h0));
+    const minutes = Math.min(59, Math.max(0, m0));
+    try {
+      const { data } = await api.patch<QuestionApiRow>(`/questions/${reviewTargetId}/review-date`, {
+        days,
+        hours,
+        minutes,
+      });
+      const updated = mapRowToQuestion(data);
+      setQuestions(prev => prev.map(q => (q.id === updated.id ? updated : q)));
+      setReviewDialogOpen(false);
+      setReviewTargetId(null);
+      toast.success('Tekrar zamanı güncellendi');
+    } catch (e) {
+      console.error(e);
+      const msg = isAxiosError(e) ? (e.response?.data as { error?: string })?.error : undefined;
+      toast.error(msg ?? 'Tekrar zamanı güncellenemedi');
+    }
+  };
+
   const handleDeleteQuestion = async (id: string) => {
     try {
       await api.delete(`/questions/${id}`);
@@ -128,7 +197,11 @@ export function QuestionsPage() {
     }
   };
 
-  const difficultyLabel = { easy: 'Kolay (5 gün)', medium: 'Orta (3 gün)', hard: 'Zor (1 gün)' };
+  const difficultyLabel = {
+    easy: `Kolay (${difficultySettings.easy} gün)`,
+    medium: `Orta (${difficultySettings.medium} gün)`,
+    hard: `Zor (${difficultySettings.hard} gün)`,
+  } as const;
   const difficultyColor = { easy: 'bg-green-100 text-green-800 border-green-300', medium: 'bg-amber-100 text-amber-800 border-amber-300', hard: 'bg-red-100 text-red-800 border-red-300' };
 
   return (
@@ -318,14 +391,24 @@ export function QuestionsPage() {
             <div key={q.id} className="bg-card rounded-xl border border-border overflow-hidden relative">
               <div className="relative">
                 <img src={q.imageUrl} alt="Soru" className="w-full h-40 object-cover" />
-                <button
-                  type="button"
-                  onClick={() => setIdToDelete(q.id)}
-                  className="absolute top-2 right-2 p-1 rounded-full bg-black/50 text-white hover:bg-black/70"
-                  aria-label="Soruyu sil"
-                >
-                  <X className="w-4 h-4" />
-                </button>
+                <div className="absolute top-2 right-2 flex gap-1">
+                  <button
+                    type="button"
+                    onClick={() => openReviewDialog(q.id)}
+                    className="p-1 rounded-full bg-black/50 text-white hover:bg-black/70"
+                    aria-label="Tekrar zamanını ayarla"
+                  >
+                    <Calendar className="w-4 h-4" />
+                  </button>
+                  <button
+                    type="button"
+                    onClick={() => setIdToDelete(q.id)}
+                    className="p-1 rounded-full bg-black/50 text-white hover:bg-black/70"
+                    aria-label="Soruyu sil"
+                  >
+                    <X className="w-4 h-4" />
+                  </button>
+                </div>
               </div>
               <div className="p-3">
                 <div className="flex items-center justify-between">
@@ -342,6 +425,63 @@ export function QuestionsPage() {
           ))}
         </div>
       )}
+
+      <Dialog
+        open={reviewDialogOpen}
+        onOpenChange={(open) => {
+          setReviewDialogOpen(open);
+          if (!open) setReviewTargetId(null);
+        }}
+      >
+        <DialogContent className="sm:max-w-md">
+          <DialogHeader>
+            <DialogTitle>Tekrar Zamanını Ayarla</DialogTitle>
+          </DialogHeader>
+          <div className="grid gap-3 py-2">
+            <label className="flex flex-col gap-1 text-sm">
+              <span className="text-muted-foreground">Gün</span>
+              <input
+                type="number"
+                min={0}
+                max={365}
+                value={reviewDays}
+                onChange={e => setReviewDays(Number(e.target.value))}
+                className="rounded-md border border-input bg-background px-3 py-2 text-sm"
+              />
+            </label>
+            <label className="flex flex-col gap-1 text-sm">
+              <span className="text-muted-foreground">Saat</span>
+              <input
+                type="number"
+                min={0}
+                max={23}
+                value={reviewHours}
+                onChange={e => setReviewHours(Number(e.target.value))}
+                className="rounded-md border border-input bg-background px-3 py-2 text-sm"
+              />
+            </label>
+            <label className="flex flex-col gap-1 text-sm">
+              <span className="text-muted-foreground">Dakika</span>
+              <input
+                type="number"
+                min={0}
+                max={59}
+                value={reviewMinutes}
+                onChange={e => setReviewMinutes(Number(e.target.value))}
+                className="rounded-md border border-input bg-background px-3 py-2 text-sm"
+              />
+            </label>
+          </div>
+          <DialogFooter>
+            <Button type="button" variant="outline" onClick={() => setReviewDialogOpen(false)}>
+              İptal
+            </Button>
+            <Button type="button" onClick={() => void handleSaveReviewDate()}>
+              Kaydet
+            </Button>
+          </DialogFooter>
+        </DialogContent>
+      </Dialog>
 
       <AlertDialog open={idToDelete !== null} onOpenChange={(open) => { if (!open) setIdToDelete(null); }}>
         <AlertDialogContent>

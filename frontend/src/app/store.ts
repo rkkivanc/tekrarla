@@ -58,9 +58,17 @@ export function generateStudentCode(): string {
   return Math.random().toString(36).substring(2, 8).toUpperCase();
 }
 
-export function getNextReviewDate(difficulty: 'easy' | 'medium' | 'hard'): string {
+export type DifficultyIntervalSettings = { hard: number; medium: number; easy: number };
+
+const DEFAULT_INTERVAL_DAYS: DifficultyIntervalSettings = { hard: 1, medium: 3, easy: 5 };
+
+export function getNextReviewDate(
+  difficulty: 'easy' | 'medium' | 'hard',
+  settings?: DifficultyIntervalSettings,
+): string {
+  const s = settings ?? DEFAULT_INTERVAL_DAYS;
+  const days = difficulty === 'hard' ? s.hard : difficulty === 'medium' ? s.medium : s.easy;
   const now = new Date();
-  const days = difficulty === 'hard' ? 1 : difficulty === 'medium' ? 3 : 5;
   now.setDate(now.getDate() + days);
   return now.toISOString();
 }

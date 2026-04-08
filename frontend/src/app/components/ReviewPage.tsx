@@ -1,7 +1,13 @@
 import React from 'react';
 import { useState, useEffect, useLayoutEffect, useRef } from 'react';
 import { Check, X, Eye, Trash2, BookOpen, FileQuestion } from 'lucide-react';
-import { isDueForReview, getNextReviewDate, type Question, type Topic } from '../store';
+import {
+  isDueForReview,
+  getNextReviewDate,
+  type DifficultyIntervalSettings,
+  type Question,
+  type Topic,
+} from '../store';
 import { api } from '../api';
 import { toast } from 'sonner';
 import {
@@ -84,6 +90,11 @@ export function ReviewPage() {
   const [isCurrentEarlyReview, setIsCurrentEarlyReview] = useState(false);
   const [earlyReviewDialogOpen, setEarlyReviewDialogOpen] = useState(false);
   const [deleteDialogOpen, setDeleteDialogOpen] = useState(false);
+  const [difficultyIntervals, setDifficultyIntervals] = useState<DifficultyIntervalSettings>({
+    hard: 1,
+    medium: 3,
+    easy: 5,
+  });
   const earlyReviewCtxRef = useRef<EarlyReviewAfterPatchCtx | null>(null);
   const reviewSectionRef = useRef<HTMLDivElement>(null);
   const pendingScrollToReviewRef = useRef(false);
@@ -93,6 +104,29 @@ export function ReviewPage() {
     pendingScrollToReviewRef.current = false;
     reviewSectionRef.current?.scrollIntoView({ behavior: 'smooth', block: 'start' });
   }, [items.length]);
+
+  useEffect(() => {
+    let cancelled = false;
+    (async () => {
+      try {
+        const settingsRes = await api.get<DifficultyIntervalSettings>('/settings/difficulty');
+        if (
+          !cancelled &&
+          settingsRes.data &&
+          typeof settingsRes.data.hard === 'number' &&
+          typeof settingsRes.data.medium === 'number' &&
+          typeof settingsRes.data.easy === 'number'
+        ) {
+          setDifficultyIntervals(settingsRes.data);
+        }
+      } catch {
+        /* varsayılan aralıklar */
+      }
+    })();
+    return () => {
+      cancelled = true;
+    };
+  }, []);
 
   useEffect(() => {
     let cancelled = false;
@@ -173,7 +207,7 @@ export function ReviewPage() {
         await api.patch(`/questions/${q.id}`, {
           solved,
           review_count: q.reviewCount + 1,
-          next_review_at: getNextReviewDate(q.difficulty),
+          next_review_at: getNextReviewDate(q.difficulty, difficultyIntervals),
         });
       } else {
         const t = current.data;
@@ -210,7 +244,7 @@ export function ReviewPage() {
         await api.patch(`/questions/${ctx.id}`, {
           solved: ctx.solved,
           review_count: ctx.reviewCount,
-          next_review_at: getNextReviewDate(ctx.difficulty),
+          next_review_at: getNextReviewDate(ctx.difficulty, difficultyIntervals),
         });
       } else {
         const nextReviewAt = new Date(Date.now() + 3 * 86_400_000).toISOString();

@@ -169,6 +169,56 @@ export async function updateQuestion(req: Request, res: Response): Promise<void>
   }
 }
 
+export async function updateReviewDate(req: Request, res: Response): Promise<void> {
+  const userId = req.user?.id;
+  if (!userId) {
+    res.status(401).json({ error: 'Unauthorized' });
+    return;
+  }
+
+  const { id } = req.params;
+  if (!id) {
+    res.status(400).json({ error: 'id is required' });
+    return;
+  }
+
+  const body = req.body as { days?: unknown; hours?: unknown; minutes?: unknown };
+  const { days, hours, minutes } = body;
+
+  if (typeof days !== 'number' || !Number.isInteger(days) || days < 0) {
+    res.status(400).json({ error: 'days must be a non-negative integer' });
+    return;
+  }
+  if (typeof hours !== 'number' || !Number.isInteger(hours) || hours < 0) {
+    res.status(400).json({ error: 'hours must be a non-negative integer' });
+    return;
+  }
+  if (typeof minutes !== 'number' || !Number.isInteger(minutes) || minutes < 0) {
+    res.status(400).json({ error: 'minutes must be a non-negative integer' });
+    return;
+  }
+
+  try {
+    const result = await pool.query<QuestionRow>(
+      `UPDATE questions
+       SET next_review_at = NOW() + make_interval(days => $3::int, hours => $4::int, mins => $5::int)
+       WHERE id = $1 AND user_id = $2
+       RETURNING id, user_id, image_url, answer_image_url, answer_text, difficulty, subject,
+                 created_at, next_review_at, review_count, solved, deleted`,
+      [id, userId, days, hours, minutes]
+    );
+    const row = result.rows[0];
+    if (!row) {
+      res.status(404).json({ error: 'Question not found' });
+      return;
+    }
+    res.json(row);
+  } catch (err) {
+    console.error('updateReviewDate error:', err);
+    res.status(500).json({ error: 'Failed to update review date' });
+  }
+}
+
 export async function deleteQuestion(req: Request, res: Response): Promise<void> {
   const userId = req.user?.id;
   if (!userId) {

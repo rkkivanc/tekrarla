@@ -17,8 +17,28 @@ import {
   AlertDialogTitle,
 } from './ui/alert-dialog';
 import { Button } from './ui/button';
+import {
+  Dialog,
+  DialogContent,
+  DialogDescription,
+  DialogFooter,
+  DialogHeader,
+  DialogTitle,
+} from './ui/dialog';
 
 type MyTeacher = { id: string; name: string; email: string };
+
+type DifficultySettings = { hard: number; medium: number; easy: number };
+
+const DEFAULT_DIFFICULTY_SETTINGS: DifficultySettings = { hard: 1, medium: 3, easy: 5 };
+
+/** Sonraki tekrar tarihi (ISO); `settings` gün aralıklarını kullanır. */
+function getNextReviewDate(settings: DifficultySettings, difficulty: 'easy' | 'medium' | 'hard'): string {
+  const days = difficulty === 'hard' ? settings.hard : difficulty === 'medium' ? settings.medium : settings.easy;
+  const d = new Date();
+  d.setDate(d.getDate() + days);
+  return d.toISOString();
+}
 
 function urlBase64ToUint8Array(base64String: string): ArrayBuffer {
   const padding = '='.repeat((4 - (base64String.length % 4)) % 4);
@@ -66,6 +86,9 @@ export function Dashboard() {
   const [notificationTime, setNotificationTime] = useState('09:00');
   const [hasSubscription, setHasSubscription] = useState(false);
   const [notifLoading, setNotifLoading] = useState(true);
+  const [difficultySettings, setDifficultySettings] = useState<DifficultySettings>(DEFAULT_DIFFICULTY_SETTINGS);
+  const [difficultyDialogOpen, setDifficultyDialogOpen] = useState(false);
+  const [difficultyForm, setDifficultyForm] = useState<DifficultySettings>(DEFAULT_DIFFICULTY_SETTINGS);
 
   function openInvitationDialog(payload: { mode: 'accept' | 'reject'; id: string; teacherName: string }) {
     if (invitationDialogCloseTimer.current) {
@@ -142,6 +165,25 @@ export function Dashboard() {
   useEffect(() => {
     return () => {
       if (invitationDialogCloseTimer.current) clearTimeout(invitationDialogCloseTimer.current);
+    };
+  }, []);
+
+  useEffect(() => {
+    let cancelled = false;
+    (async () => {
+      try {
+        const res = await api.get<DifficultySettings>('/settings/difficulty');
+        if (cancelled || !res.data) return;
+        const { hard, medium, easy } = res.data;
+        if (typeof hard === 'number' && typeof medium === 'number' && typeof easy === 'number') {
+          setDifficultySettings({ hard, medium, easy });
+        }
+      } catch {
+        if (!cancelled) setDifficultySettings(DEFAULT_DIFFICULTY_SETTINGS);
+      }
+    })();
+    return () => {
+      cancelled = true;
     };
   }, []);
 
@@ -247,6 +289,25 @@ export function Dashboard() {
     } catch (err) {
       const msg = isAxiosError(err) ? (err.response?.data as { error?: string })?.error : undefined;
       toast.error(msg ?? 'Bildirimler kapatılamadı');
+    }
+  }
+
+  async function saveDifficultySettings() {
+    const hard = Math.floor(Number(difficultyForm.hard));
+    const medium = Math.floor(Number(difficultyForm.medium));
+    const easy = Math.floor(Number(difficultyForm.easy));
+    if (hard < 1 || medium < 1 || easy < 1) {
+      toast.error('Her alan en az 1 gün olmalı');
+      return;
+    }
+    try {
+      await api.patch('/settings/difficulty', { hard, medium, easy });
+      setDifficultySettings({ hard, medium, easy });
+      setDifficultyDialogOpen(false);
+      toast.success('Tekrar süreleri güncellendi');
+    } catch (err) {
+      const msg = isAxiosError(err) ? (err.response?.data as { error?: string })?.error : undefined;
+      toast.error(msg ?? 'Ayarlar kaydedilemedi');
     }
   }
 
@@ -432,14 +493,101 @@ export function Dashboard() {
       </div>
 
       {/* Difficulty breakdown */}
-      <div className="bg-card rounded-xl border border-border p-5">
-        <h2 className="mb-4">Zorluk Dağılımı</h2>
+      <div
+        className="bg-card rounded-xl border border-border p-5"
+        title={`Örnek tekrar (zor, bugünden): ${new Date(getNextReviewDate(difficultySettings, 'hard')).toLocaleDateString('tr-TR')}`}
+      >
+        <div className="mb-4 flex items-start justify-between gap-2">
+          <h2 className="shrink-0">Zorluk Dağılımı</h2>
+          <Button
+            type="button"
+            variant="outline"
+            size="sm"
+            className="shrink-0 text-xs"
+            onClick={() => {
+              setDifficultyForm(difficultySettings);
+              setDifficultyDialogOpen(true);
+            }}
+          >
+            Süreleri Ayarla
+          </Button>
+        </div>
         <div className="space-y-3">
-          <DifficultyBar label="Zor" count={stats.hard} total={stats.totalQuestions} color="bg-red-500" />
-          <DifficultyBar label="Orta" count={stats.medium} total={stats.totalQuestions} color="bg-amber-500" />
-          <DifficultyBar label="Kolay" count={stats.easy} total={stats.totalQuestions} color="bg-green-500" />
+          <DifficultyBar
+            label="Zor"
+            count={stats.hard}
+            total={stats.totalQuestions}
+            color="bg-red-500"
+            intervalDays={difficultySettings.hard}
+          />
+          <DifficultyBar
+            label="Orta"
+            count={stats.medium}
+            total={stats.totalQuestions}
+            color="bg-amber-500"
+            intervalDays={difficultySettings.medium}
+          />
+          <DifficultyBar
+            label="Kolay"
+            count={stats.easy}
+            total={stats.totalQuestions}
+            color="bg-green-500"
+            intervalDays={difficultySettings.easy}
+          />
         </div>
       </div>
+
+      <Dialog open={difficultyDialogOpen} onOpenChange={setDifficultyDialogOpen}>
+        <DialogContent className="sm:max-w-md">
+          <DialogHeader>
+            <DialogTitle>Zorluk Tekrar Süreleri</DialogTitle>
+            <DialogDescription>
+              Her zorluk için tekrar aralığını gün olarak ayarlayın. Örnek (zor):{' '}
+              {new Date(getNextReviewDate(difficultyForm, 'hard')).toLocaleDateString('tr-TR')}
+            </DialogDescription>
+          </DialogHeader>
+          <div className="grid gap-3 py-2">
+            <label className="flex flex-col gap-1 text-sm">
+              <span className="text-muted-foreground">Zor (hard) — gün</span>
+              <input
+                type="number"
+                min={1}
+                value={difficultyForm.hard}
+                onChange={e => setDifficultyForm(f => ({ ...f, hard: Number(e.target.value) }))}
+                className="rounded-md border border-input bg-background px-3 py-2 text-sm"
+              />
+            </label>
+            <label className="flex flex-col gap-1 text-sm">
+              <span className="text-muted-foreground">Orta (medium) — gün</span>
+              <input
+                type="number"
+                min={1}
+                value={difficultyForm.medium}
+                onChange={e => setDifficultyForm(f => ({ ...f, medium: Number(e.target.value) }))}
+                className="rounded-md border border-input bg-background px-3 py-2 text-sm"
+              />
+            </label>
+            <label className="flex flex-col gap-1 text-sm">
+              <span className="text-muted-foreground">Kolay (easy) — gün</span>
+              <input
+                type="number"
+                min={1}
+                value={difficultyForm.easy}
+                onChange={e => setDifficultyForm(f => ({ ...f, easy: Number(e.target.value) }))}
+                className="rounded-md border border-input bg-background px-3 py-2 text-sm"
+              />
+            </label>
+          </div>
+          <DialogFooter>
+            <Button type="button" variant="outline" onClick={() => setDifficultyDialogOpen(false)}>
+              İptal
+            </Button>
+            <Button type="button" onClick={() => void saveDifficultySettings()}>
+              Kaydet
+            </Button>
+          </DialogFooter>
+        </DialogContent>
+      </Dialog>
 
       {/* Activity */}
       <div className="bg-card rounded-xl border border-border p-5">
@@ -521,11 +669,25 @@ function StatCard({ icon: Icon, label, value, color }: { icon: any; label: strin
   );
 }
 
-function DifficultyBar({ label, count, total, color }: { label: string; count: number; total: number; color: string }) {
+function DifficultyBar({
+  label,
+  count,
+  total,
+  color,
+  intervalDays,
+}: {
+  label: string;
+  count: number;
+  total: number;
+  color: string;
+  intervalDays: number;
+}) {
   const pct = total > 0 ? (count / total) * 100 : 0;
   return (
     <div className="flex items-center gap-3">
-      <span className="w-12 text-sm">{label}</span>
+      <span className="min-w-[6rem] text-sm sm:min-w-[7rem]">
+        {label} ({intervalDays} gün)
+      </span>
       <div className="flex-1 bg-muted rounded-full h-3 overflow-hidden">
         <div className={`h-full rounded-full ${color} transition-all`} style={{ width: `${pct}%` }} />
       </div>
