@@ -2,19 +2,6 @@ import type { Request, Response } from 'express';
 import type { PushSubscription } from 'web-push';
 import { pool } from '../db.js';
 
-const HHMM_RE = /^([01]?\d|2[0-3]):[0-5]\d$/;
-
-function normalizeHHMM(raw: string): string | null {
-  const s = raw.trim();
-  if (!HHMM_RE.test(s)) {
-    return null;
-  }
-  const [hPart, mPart] = s.split(':');
-  const h = hPart ?? '';
-  const m = mPart ?? '';
-  return `${h.padStart(2, '0')}:${m.padStart(2, '0')}`;
-}
-
 function isPushSubscription(value: unknown): value is PushSubscription {
   if (typeof value !== 'object' || value === null) {
     return false;
@@ -71,15 +58,12 @@ export async function updateNotificationTime(req: Request, res: Response): Promi
     return;
   }
 
-  const normalized = normalizeHHMM(body.notification_time);
-  if (!normalized) {
-    res.status(400).json({ error: 'notification_time must be HH:MM' });
-    return;
-  }
+  const notification_time = body.notification_time;
+  const timePart = notification_time.substring(0, 5);
 
   try {
     const result = await pool.query(`UPDATE users SET notification_time = $1::time WHERE id = $2`, [
-      normalized,
+      timePart,
       userId,
     ]);
     if (!result.rowCount) {
