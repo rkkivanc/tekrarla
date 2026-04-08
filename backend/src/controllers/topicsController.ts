@@ -49,6 +49,7 @@ export async function createTopic(req: Request, res: Response): Promise<void> {
     title?: unknown;
     notes?: unknown;
     image_url?: unknown;
+    next_review_at?: unknown;
   };
 
   if (typeof body.title !== 'string' || !body.title.trim()) {
@@ -61,7 +62,17 @@ export async function createTopic(req: Request, res: Response): Promise<void> {
   const image_url =
     typeof body.image_url === 'string' && body.image_url.trim() ? body.image_url.trim() : null;
 
-  const next_review_at = nextReviewInThreeDays();
+  let next_review_at: Date;
+  if (typeof body.next_review_at === 'string' && body.next_review_at.trim()) {
+    const parsed = new Date(body.next_review_at.trim());
+    if (Number.isNaN(parsed.getTime())) {
+      res.status(400).json({ error: 'next_review_at must be a valid ISO date' });
+      return;
+    }
+    next_review_at = parsed;
+  } else {
+    next_review_at = nextReviewInThreeDays();
+  }
 
   try {
     const result = await pool.query<TopicRow>(

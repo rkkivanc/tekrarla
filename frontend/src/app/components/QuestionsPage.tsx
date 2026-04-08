@@ -2,7 +2,7 @@ import React from 'react';
 import { useState, useRef, useEffect, useCallback } from 'react';
 import { Calendar, Camera, Plus, X } from 'lucide-react';
 import imageCompression from 'browser-image-compression';
-import type { Question } from '../store';
+import { type Question, getNextReviewDate } from '../store';
 import { api } from '../api';
 import { toast } from 'sonner';
 import {
@@ -26,6 +26,16 @@ import { isAxiosError } from 'axios';
 type DifficultySettings = { hard: number; medium: number; easy: number };
 
 const DEFAULT_DIFFICULTY_SETTINGS: DifficultySettings = { hard: 1, medium: 3, easy: 5 };
+
+function nextReviewAtFromOffsets(days: number, hours: number, minutes: number): string {
+  const d0 = Number.isFinite(days) ? Math.floor(days) : 0;
+  const h0 = Number.isFinite(hours) ? Math.floor(hours) : 0;
+  const m0 = Number.isFinite(minutes) ? Math.floor(minutes) : 0;
+  const d = Math.min(365, Math.max(0, d0));
+  const h = Math.min(23, Math.max(0, h0));
+  const m = Math.min(59, Math.max(0, m0));
+  return new Date(Date.now() + d * 86_400_000 + h * 3_600_000 + m * 60_000).toISOString();
+}
 
 type QuestionApiRow = {
   id: string;
@@ -63,7 +73,10 @@ export function QuestionsPage() {
   const [questionImg, setQuestionImg] = useState('');
   const [answerImg, setAnswerImg] = useState('');
   const [answerText, setAnswerText] = useState('');
-  const [difficulty, setDifficulty] = useState<'easy' | 'medium' | 'hard'>('medium');
+  const [difficulty, setDifficulty] = useState<'easy' | 'medium' | 'hard' | 'custom'>('medium');
+  const [customDays, setCustomDays] = useState(1);
+  const [customHours, setCustomHours] = useState(0);
+  const [customMinutes, setCustomMinutes] = useState(0);
   const [subject, setSubject] = useState('');
   const [answerType, setAnswerType] = useState<'text' | 'image'>('text');
   const qCameraRef = useRef<HTMLInputElement>(null);
@@ -131,12 +144,17 @@ export function QuestionsPage() {
     if (answerType === 'image' && !answerImg) { toast.error('Lütfen cevap fotoğrafı yükleyin'); return; }
 
     try {
+      const next_review_at =
+        difficulty === 'custom'
+          ? nextReviewAtFromOffsets(customDays, customHours, customMinutes)
+          : getNextReviewDate(difficulty, difficultySettings);
       await api.post('/questions', {
         image_url: questionImg,
         answer_image_url: answerImg,
         answer_text: answerText,
         difficulty,
         subject,
+        next_review_at,
       });
       await refreshQuestions();
       setShowForm(false);
@@ -145,6 +163,9 @@ export function QuestionsPage() {
       setAnswerText('');
       setSubject('');
       setDifficulty('medium');
+      setCustomDays(1);
+      setCustomHours(0);
+      setCustomMinutes(0);
       toast.success('Soru eklendi! Tekrar tarihi belirlendi.');
     } catch (e) {
       console.error(e);
@@ -201,8 +222,14 @@ export function QuestionsPage() {
     easy: `Kolay (${difficultySettings.easy} gün)`,
     medium: `Orta (${difficultySettings.medium} gün)`,
     hard: `Zor (${difficultySettings.hard} gün)`,
+    custom: 'Özel aralık',
   } as const;
-  const difficultyColor = { easy: 'bg-green-100 text-green-800 border-green-300', medium: 'bg-amber-100 text-amber-800 border-amber-300', hard: 'bg-red-100 text-red-800 border-red-300' };
+  const difficultyColor = {
+    easy: 'bg-green-100 text-green-800 border-green-300',
+    medium: 'bg-amber-100 text-amber-800 border-amber-300',
+    hard: 'bg-red-100 text-red-800 border-red-300',
+    custom: 'bg-slate-100 text-slate-800 border-slate-300',
+  };
 
   return (
     <div className="space-y-4 pb-20 md:pb-0">
@@ -288,13 +315,50 @@ export function QuestionsPage() {
           {/* Difficulty */}
           <div>
             <label className="text-sm text-muted-foreground mb-1 block">Zorluk *</label>
-            <div className="flex gap-2">
-              {(['hard', 'medium', 'easy'] as const).map(d => (
-                <button key={d} onClick={() => setDifficulty(d)} className={`flex-1 py-2 rounded-lg border text-sm transition-colors ${difficulty === d ? difficultyColor[d] : 'border-border hover:bg-accent'}`}>
+            <div className="flex flex-wrap gap-2">
+              {(['hard', 'medium', 'easy', 'custom'] as const).map(d => (
+                <button key={d} onClick={() => setDifficulty(d)} className={`flex-1 min-w-[calc(50%-0.25rem)] py-2 rounded-lg border text-sm transition-colors ${difficulty === d ? difficultyColor[d] : 'border-border hover:bg-accent'}`}>
                   {difficultyLabel[d]}
                 </button>
               ))}
             </div>
+            {difficulty === 'custom' && (
+              <div className="grid grid-cols-1 sm:grid-cols-3 gap-3 mt-3">
+                <label className="flex flex-col gap-1 text-sm">
+                  <span className="text-muted-foreground">Gün</span>
+                  <input
+                    type="number"
+                    min={0}
+                    max={365}
+                    value={customDays}
+                    onChange={e => setCustomDays(Number(e.target.value))}
+                    className="rounded-md border border-input bg-background px-3 py-2 text-sm"
+                  />
+                </label>
+                <label className="flex flex-col gap-1 text-sm">
+                  <span className="text-muted-foreground">Saat</span>
+                  <input
+                    type="number"
+                    min={0}
+                    max={23}
+                    value={customHours}
+                    onChange={e => setCustomHours(Number(e.target.value))}
+                    className="rounded-md border border-input bg-background px-3 py-2 text-sm"
+                  />
+                </label>
+                <label className="flex flex-col gap-1 text-sm">
+                  <span className="text-muted-foreground">Dakika</span>
+                  <input
+                    type="number"
+                    min={0}
+                    max={59}
+                    value={customMinutes}
+                    onChange={e => setCustomMinutes(Number(e.target.value))}
+                    className="rounded-md border border-input bg-background px-3 py-2 text-sm"
+                  />
+                </label>
+              </div>
+            )}
           </div>
 
           {/* Answer type */}
@@ -412,8 +476,8 @@ export function QuestionsPage() {
               </div>
               <div className="p-3">
                 <div className="flex items-center justify-between">
-                  <span className={`text-xs px-2 py-0.5 rounded-full ${difficultyColor[q.difficulty]}`}>
-                    {q.difficulty === 'hard' ? 'Zor' : q.difficulty === 'medium' ? 'Orta' : 'Kolay'}
+                  <span className={`text-xs px-2 py-0.5 rounded-full ${difficultyColor[q.difficulty as keyof typeof difficultyColor] ?? difficultyColor.medium}`}>
+                    {q.difficulty === 'hard' ? 'Zor' : q.difficulty === 'medium' ? 'Orta' : q.difficulty === 'custom' ? 'Özel' : 'Kolay'}
                   </span>
                   {q.subject && <span className="text-xs text-muted-foreground">{q.subject}</span>}
                 </div>

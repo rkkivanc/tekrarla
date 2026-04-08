@@ -66,6 +66,7 @@ export async function createQuestion(req: Request, res: Response): Promise<void>
     answer_text?: unknown;
     difficulty?: unknown;
     subject?: unknown;
+    next_review_at?: unknown;
   };
 
   if (typeof body.image_url !== 'string' || !body.image_url.trim()) {
@@ -81,12 +82,22 @@ export async function createQuestion(req: Request, res: Response): Promise<void>
   const subject = typeof body.subject === 'string' ? body.subject : null;
 
   const diffKey = (difficulty ?? 'medium').toLowerCase();
-  if (!['easy', 'medium', 'hard'].includes(diffKey)) {
-    res.status(400).json({ error: 'difficulty must be easy, medium, or hard' });
+  if (!['easy', 'medium', 'hard', 'custom'].includes(diffKey)) {
+    res.status(400).json({ error: 'difficulty must be easy, medium, hard, or custom' });
     return;
   }
 
-  const next_review_at = nextReviewAtForDifficulty(diffKey);
+  let next_review_at: Date;
+  if (typeof body.next_review_at === 'string' && body.next_review_at.trim()) {
+    const parsed = new Date(body.next_review_at.trim());
+    if (Number.isNaN(parsed.getTime())) {
+      res.status(400).json({ error: 'next_review_at must be a valid ISO date' });
+      return;
+    }
+    next_review_at = parsed;
+  } else {
+    next_review_at = nextReviewAtForDifficulty(diffKey);
+  }
 
   try {
     const result = await pool.query<QuestionRow>(

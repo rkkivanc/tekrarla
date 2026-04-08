@@ -25,6 +25,16 @@ type TopicRow = {
   review_count: number;
 };
 
+function nextReviewAtFromOffsets(days: number, hours: number, minutes: number): string {
+  const d0 = Number.isFinite(days) ? Math.floor(days) : 0;
+  const h0 = Number.isFinite(hours) ? Math.floor(hours) : 0;
+  const m0 = Number.isFinite(minutes) ? Math.floor(minutes) : 0;
+  const d = Math.min(365, Math.max(0, d0));
+  const h = Math.min(23, Math.max(0, h0));
+  const m = Math.min(59, Math.max(0, m0));
+  return new Date(Date.now() + d * 86_400_000 + h * 3_600_000 + m * 60_000).toISOString();
+}
+
 function rowToTopic(row: TopicRow): Topic {
   return {
     id: row.id,
@@ -47,6 +57,9 @@ export function TopicsPage() {
   const fileGalleryRef = useRef<HTMLInputElement>(null);
   const [expandedId, setExpandedId] = useState<string | null>(null);
   const [idToDelete, setIdToDelete] = useState<string | null>(null);
+  const [topicDays, setTopicDays] = useState(3);
+  const [topicHours, setTopicHours] = useState(0);
+  const [topicMinutes, setTopicMinutes] = useState(0);
 
   useEffect(() => {
     let cancelled = false;
@@ -89,10 +102,12 @@ export function TopicsPage() {
       return;
     }
     try {
+      const next_review_at = nextReviewAtFromOffsets(topicDays, topicHours, topicMinutes);
       const { data } = await api.post<TopicRow>('/topics', {
         title: title.trim(),
         notes: notes.trim(),
         image_url: imageUrl || null,
+        next_review_at,
       });
       const newTopic = rowToTopic(data);
       setTopics(prev => [newTopic, ...prev]);
@@ -100,6 +115,9 @@ export function TopicsPage() {
       setTitle('');
       setNotes('');
       setImageUrl('');
+      setTopicDays(3);
+      setTopicHours(0);
+      setTopicMinutes(0);
       toast.success('Konu notu eklendi!');
     } catch {
       toast.error('Konu kaydedilemedi');
@@ -192,7 +210,44 @@ export function TopicsPage() {
             }}
           />
 
-          <p className="text-xs text-muted-foreground">3 gün sonra tekrar bildirimi gönderilecek</p>
+          <div className="space-y-2">
+            <label className="text-sm text-muted-foreground block">İlk tekrar (şu andan itibaren)</label>
+            <div className="grid grid-cols-1 sm:grid-cols-3 gap-3">
+              <label className="flex flex-col gap-1 text-sm">
+                <span className="text-muted-foreground">Gün</span>
+                <input
+                  type="number"
+                  min={0}
+                  max={365}
+                  value={topicDays}
+                  onChange={e => setTopicDays(Number(e.target.value))}
+                  className="rounded-md border border-input bg-background px-3 py-2 text-sm"
+                />
+              </label>
+              <label className="flex flex-col gap-1 text-sm">
+                <span className="text-muted-foreground">Saat</span>
+                <input
+                  type="number"
+                  min={0}
+                  max={23}
+                  value={topicHours}
+                  onChange={e => setTopicHours(Number(e.target.value))}
+                  className="rounded-md border border-input bg-background px-3 py-2 text-sm"
+                />
+              </label>
+              <label className="flex flex-col gap-1 text-sm">
+                <span className="text-muted-foreground">Dakika</span>
+                <input
+                  type="number"
+                  min={0}
+                  max={59}
+                  value={topicMinutes}
+                  onChange={e => setTopicMinutes(Number(e.target.value))}
+                  className="rounded-md border border-input bg-background px-3 py-2 text-sm"
+                />
+              </label>
+            </div>
+          </div>
           <button onClick={() => void handleSubmit()} className="w-full py-3 rounded-lg bg-primary text-primary-foreground">
             Kaydet
           </button>
