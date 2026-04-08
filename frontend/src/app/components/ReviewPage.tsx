@@ -19,10 +19,9 @@ import {
   AlertDialogHeader,
   AlertDialogTitle,
 } from './ui/alert-dialog';
-import { Button, buttonVariants } from './ui/button';
+import { Button } from './ui/button';
 import { Input } from './ui/input';
 import { Label } from './ui/label';
-import { cn } from './ui/utils';
 
 type ReviewItem = { type: 'question'; data: Question } | { type: 'topic'; data: Topic };
 
@@ -66,10 +65,6 @@ function mapQuestionRow(row: QuestionApiRow): Question {
   };
 }
 
-type EarlyReviewAfterPatchCtx =
-  | { type: 'question'; id: string; solved: boolean; reviewCount: number; difficulty: Question['difficulty'] }
-  | { type: 'topic'; id: string; reviewCount: number; lastResult: 'understood' | 'not_understood' };
-
 function intervalDaysForDifficulty(
   difficulty: Question['difficulty'],
   settings: DifficultyIntervalSettings,
@@ -97,7 +92,6 @@ export function ReviewPage() {
   const [showAnswer, setShowAnswer] = useState(false);
   const [flipped, setFlipped] = useState(false);
   const [isCurrentEarlyReview, setIsCurrentEarlyReview] = useState(false);
-  const [earlyReviewDialogOpen, setEarlyReviewDialogOpen] = useState(false);
   const [positiveIntervalDialogOpen, setPositiveIntervalDialogOpen] = useState(false);
   const [positiveIntervalFor, setPositiveIntervalFor] = useState<'question' | 'topic' | null>(null);
   const [positiveDays, setPositiveDays] = useState(3);
@@ -114,7 +108,6 @@ export function ReviewPage() {
     medium: 3,
     easy: 5,
   });
-  const earlyReviewCtxRef = useRef<EarlyReviewAfterPatchCtx | null>(null);
   const reviewSectionRef = useRef<HTMLDivElement>(null);
   const pendingScrollToReviewRef = useRef(false);
 
@@ -259,14 +252,8 @@ export function ReviewPage() {
           next_review_at: nextAt,
           last_result: solved ? 'solved' : 'failed',
         });
-        earlyReviewCtxRef.current = {
-          type: 'question',
-          id: q.id,
-          solved,
-          reviewCount: q.reviewCount + 1,
-          difficulty: q.difficulty,
-        };
-        setEarlyReviewDialogOpen(true);
+        toast.success(solved ? 'Harika! Başardın! 🎉' : 'Tekrar zamanı ayarlandı');
+        next();
         return;
       }
 
@@ -315,13 +302,8 @@ export function ReviewPage() {
           next_review_at: nextAt,
           last_result: lastResult,
         });
-        earlyReviewCtxRef.current = {
-          type: 'topic',
-          id: t.id,
-          reviewCount: t.reviewCount + 1,
-          lastResult,
-        };
-        setEarlyReviewDialogOpen(true);
+        toast.success(lastResult === 'understood' ? 'Harika! Başardın! 🎉' : 'Tekrar zamanı ayarlandı');
+        next();
         return;
       }
 
@@ -342,47 +324,6 @@ export function ReviewPage() {
         last_result: lastResult,
       });
       toast.success(lastResult === 'understood' ? 'Harika! Başardın! 🎉' : 'Tekrar zamanı ayarlandı');
-      next();
-    } catch (e) {
-      console.error(e);
-      toast.error('Güncelleme başarısız');
-    }
-  };
-
-  const finishEarlyReviewKeepSchedule = () => {
-    setEarlyReviewDialogOpen(false);
-    earlyReviewCtxRef.current = null;
-    setIsCurrentEarlyReview(false);
-    toast.success('Planlanmış tekrar tarihi korundu');
-    next();
-  };
-
-  const finishEarlyReviewResetSchedule = async () => {
-    const ctx = earlyReviewCtxRef.current;
-    if (!ctx) {
-      setEarlyReviewDialogOpen(false);
-      return;
-    }
-    try {
-      if (ctx.type === 'question') {
-        await api.patch(`/questions/${ctx.id}`, {
-          solved: ctx.solved,
-          review_count: ctx.reviewCount,
-          next_review_at: getNextReviewDate(ctx.difficulty, difficultyIntervals),
-          last_result: ctx.solved ? 'solved' : 'failed',
-        });
-      } else {
-        const nextReviewAt = new Date(Date.now() + 3 * 86_400_000).toISOString();
-        await api.patch(`/topics/${ctx.id}`, {
-          review_count: ctx.reviewCount,
-          next_review_at: nextReviewAt,
-          last_result: ctx.lastResult,
-        });
-      }
-      setEarlyReviewDialogOpen(false);
-      earlyReviewCtxRef.current = null;
-      setIsCurrentEarlyReview(false);
-      toast.success('Tekrar zamanı güncellendi');
       next();
     } catch (e) {
       console.error(e);
@@ -445,31 +386,6 @@ export function ReviewPage() {
             <AlertDialogCancel type="button">İptal</AlertDialogCancel>
             <Button type="button" variant="destructive" onClick={() => void handleDelete()}>
               Sil
-            </Button>
-          </AlertDialogFooter>
-        </AlertDialogContent>
-      </AlertDialog>
-
-      <AlertDialog open={earlyReviewDialogOpen} onOpenChange={setEarlyReviewDialogOpen}>
-        <AlertDialogContent>
-          <AlertDialogHeader>
-            <AlertDialogTitle>Tekrar zamanı henüz gelmemişti.</AlertDialogTitle>
-            <AlertDialogDescription>
-              Bir dahaki tekrar için ne yapalım?
-            </AlertDialogDescription>
-          </AlertDialogHeader>
-          <AlertDialogFooter>
-            <AlertDialogCancel
-              type="button"
-              className={cn(buttonVariants({ variant: 'outline' }), 'sm:mt-0')}
-              onClick={() => {
-                finishEarlyReviewKeepSchedule();
-              }}
-            >
-              Planlanmış zamanda tekrar et
-            </AlertDialogCancel>
-            <Button type="button" onClick={() => void finishEarlyReviewResetSchedule()}>
-              Tekrar zamanını sıfırla
             </Button>
           </AlertDialogFooter>
         </AlertDialogContent>
