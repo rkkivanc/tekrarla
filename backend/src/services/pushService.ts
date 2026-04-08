@@ -33,19 +33,22 @@ export async function sendDailyNotifications(): Promise<void> {
     return;
   }
 
-  const hhmmUtc = currentUtcHHMM();
-
   try {
-    const usersResult = await pool.query<{ id: string; subscription: unknown }>(
-      `SELECT u.id, ps.subscription
+    const usersResult = await pool.query<{
+      id: string;
+      notification_time: unknown;
+      subscription: unknown;
+    }>(
+      `SELECT u.id, u.notification_time, ps.subscription
        FROM users u
        INNER JOIN push_subscriptions ps ON ps.user_id = u.id
-       WHERE u.notification_time IS NOT NULL
-         AND to_char(u.notification_time::time, 'HH24:MI') = $1`,
-      [hhmmUtc]
+       WHERE u.notification_time IS NOT NULL`
     );
 
     for (const row of usersResult.rows) {
+      const dbTime = (row.notification_time as string).substring(0, 5);
+      if (dbTime !== currentUtcHHMM()) continue;
+
       const sub = row.subscription as PushSubscription;
       if (!sub?.endpoint || !sub.keys?.p256dh || !sub.keys?.auth) {
         continue;
