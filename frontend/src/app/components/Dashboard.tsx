@@ -20,6 +20,17 @@ import { Button } from './ui/button';
 
 type MyTeacher = { id: string; name: string; email: string };
 
+function urlBase64ToUint8Array(base64String: string): ArrayBuffer {
+  const padding = '='.repeat((4 - (base64String.length % 4)) % 4);
+  const base64 = (base64String + padding).replace(/-/g, '+').replace(/_/g, '/');
+  const rawData = window.atob(base64);
+  const outputArray = new Uint8Array(rawData.length);
+  for (let i = 0; i < rawData.length; ++i) {
+    outputArray[i] = rawData.charCodeAt(i);
+  }
+  return outputArray.buffer.slice(outputArray.byteOffset, outputArray.byteOffset + outputArray.byteLength);
+}
+
 export function Dashboard() {
   const navigate = useNavigate();
   const [questions, setQuestions] = useState<any[]>([]);
@@ -34,6 +45,9 @@ export function Dashboard() {
   const [myTeacher, setMyTeacher] = useState<MyTeacher | null>(null);
   const [leaveClassDialogOpen, setLeaveClassDialogOpen] = useState(false);
   const [loading, setLoading] = useState(true);
+  const [notificationTime, setNotificationTime] = useState('09:00');
+  const [hasSubscription, setHasSubscription] = useState(false);
+  const [notifLoading, setNotifLoading] = useState(true);
 
   function openInvitationDialog(payload: { mode: 'accept' | 'reject'; id: string; teacherName: string }) {
     if (invitationDialogCloseTimer.current) {
@@ -75,6 +89,31 @@ export function Dashboard() {
         }
       } finally {
         if (!cancelled) setLoading(false);
+      }
+    })();
+    return () => {
+      cancelled = true;
+    };
+  }, []);
+
+  useEffect(() => {
+    let cancelled = false;
+    (async () => {
+      try {
+        const res = await api.get<{ notificationTime: string | null; hasSubscription: boolean }>(
+          '/notifications/settings',
+        );
+        if (cancelled) return;
+        if (res.data.notificationTime) {
+          setNotificationTime(res.data.notificationTime);
+        }
+        setHasSubscription(res.data.hasSubscription);
+      } catch {
+        if (!cancelled) {
+          setHasSubscription(false);
+        }
+      } finally {
+        if (!cancelled) setNotifLoading(false);
       }
     })();
     return () => {
@@ -129,6 +168,67 @@ export function Dashboard() {
     } catch (err) {
       const msg = isAxiosError(err) ? (err.response?.data as { error?: string })?.error : undefined;
       toast.error(msg ?? 'İşlem başarısız');
+    }
+  }
+
+  const notificationsSupported =
+    typeof window !== 'undefined' &&
+    'Notification' in window &&
+    'serviceWorker' in navigator &&
+    'PushManager' in window;
+
+  async function requestNotificationPermission() {
+    if (!notificationsSupported) {
+      toast.error('Bu tarayıcı bildirimleri desteklemiyor');
+      return;
+    }
+    try {
+      const perm = await Notification.requestPermission();
+      if (perm !== 'granted') {
+        toast.error('Bildirim izni verilmedi');
+        return;
+      }
+      const vapidRes = await api.get<{ publicKey: string }>('/notifications/vapid-public-key');
+      const publicKey = vapidRes.data.publicKey;
+      if (!publicKey) {
+        toast.error('Bildirim anahtarı alınamadı');
+        return;
+      }
+      const registration = await navigator.serviceWorker.ready;
+      const subscription = await registration.pushManager.subscribe({
+        userVisibleOnly: true,
+        applicationServerKey: urlBase64ToUint8Array(publicKey),
+      });
+      await api.post('/notifications/subscribe', { subscription: subscription.toJSON() });
+      setHasSubscription(true);
+      toast.success('Bildirimler etkinleştirildi');
+    } catch (err) {
+      const msg = isAxiosError(err) ? (err.response?.data as { error?: string })?.error : undefined;
+      toast.error(msg ?? 'Bildirimler etkinleştirilemedi');
+    }
+  }
+
+  async function updateNotificationTime() {
+    try {
+      await api.patch('/notifications/time', { notification_time: notificationTime });
+      toast.success('Bildirim saati güncellendi');
+    } catch (err) {
+      const msg = isAxiosError(err) ? (err.response?.data as { error?: string })?.error : undefined;
+      toast.error(msg ?? 'Saat güncellenemedi');
+    }
+  }
+
+  async function disableNotifications() {
+    try {
+      const registration = await navigator.serviceWorker.ready;
+      const sub = await registration.pushManager.getSubscription();
+      await sub?.unsubscribe();
+      await api.delete('/notifications/subscribe');
+      setHasSubscription(false);
+      toast.success('Bildirimler kapatıldı');
+    } catch (err) {
+      const msg = isAxiosError(err) ? (err.response?.data as { error?: string })?.error : undefined;
+      toast.error(msg ?? 'Bildirimler kapatılamadı');
     }
   }
 
@@ -342,6 +442,45 @@ export function Dashboard() {
             </div>
           </div>
         </div>
+      </div>
+
+      <div className="bg-card rounded-xl border border-border p-5">
+        <h2 className="mb-4">Bildirim Ayarları</h2>
+        {notifLoading ? (
+          <p className="text-sm text-muted-foreground">Yükleniyor…</p>
+        ) : !notificationsSupported ? (
+          <p className="text-sm text-muted-foreground">Bu tarayıcı bildirimleri desteklemiyor</p>
+        ) : !hasSubscription ? (
+          <div className="space-y-3">
+            <p className="text-sm text-muted-foreground">Tekrar zamanı geldiğinde bildirim al</p>
+            <Button type="button" onClick={() => void requestNotificationPermission()}>
+              Bildirimleri Etkinleştir
+            </Button>
+          </div>
+        ) : (
+          <div className="space-y-4">
+            <p className="text-sm font-medium text-green-700 dark:text-green-400">Bildirimler aktif ✓</p>
+            <div className="flex flex-col gap-3 sm:flex-row sm:items-end sm:flex-wrap">
+              <label className="flex flex-col gap-1 text-sm">
+                <span className="text-muted-foreground">Günlük hatırlatma saati</span>
+                <input
+                  type="time"
+                  value={notificationTime}
+                  onChange={e => setNotificationTime(e.target.value)}
+                  className="rounded-md border border-input bg-background px-3 py-2 text-sm"
+                />
+              </label>
+              <div className="flex flex-wrap gap-2">
+                <Button type="button" onClick={() => void updateNotificationTime()}>
+                  Kaydet
+                </Button>
+                <Button type="button" variant="outline" onClick={() => void disableNotifications()}>
+                  Bildirimleri Kapat
+                </Button>
+              </div>
+            </div>
+          </div>
+        )}
       </div>
 
       {/* Quick actions */}
