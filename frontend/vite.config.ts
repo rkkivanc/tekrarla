@@ -11,10 +11,14 @@ export default defineConfig({
     react(),
     tailwindcss(),
     VitePWA({
-      strategies: 'injectManifest',
-      srcDir: 'public',
-      filename: 'sw-push.js',
       registerType: 'autoUpdate',
+      strategies: 'generateSW',
+      workbox: {
+        runtimeCaching: [],
+        additionalManifestEntries: [],
+        importScripts: ['/sw-custom.js'],
+      },
+      injectManifest: undefined,
       manifest: {
         name: 'Tekrarla',
         short_name: 'Tekrarla',
