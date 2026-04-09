@@ -25,7 +25,14 @@ export async function sendPushNotification(
   if (!publicKey || !privateKey) {
     return;
   }
-  await webpush.sendNotification(subscription, JSON.stringify({ title, body }));
+  const payload = JSON.stringify({ title, body });
+  try {
+    await webpush.sendNotification(subscription, payload);
+    console.log('Push sent successfully to:', subscription.endpoint.substring(0, 50));
+  } catch (error: any) {
+    console.error('Push failed:', error.statusCode, error.body, subscription.endpoint.substring(0, 50));
+    throw error;
+  }
 }
 
 export async function sendDailyNotifications(): Promise<void> {
