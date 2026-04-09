@@ -29,6 +29,8 @@ export async function sendPushNotification(
 }
 
 export async function sendDailyNotifications(): Promise<void> {
+  console.log('sendDailyNotifications running at', new Date().toISOString());
+
   if (!publicKey || !privateKey) {
     return;
   }
@@ -36,16 +38,20 @@ export async function sendDailyNotifications(): Promise<void> {
   try {
     const usersResult = await pool.query<{
       id: string;
+      user_id: string;
       notification_time: unknown;
       subscription: unknown;
     }>(
-      `SELECT u.id, u.notification_time, ps.subscription
+      `SELECT u.id, u.id AS user_id, u.notification_time, ps.subscription
        FROM users u
        INNER JOIN push_subscriptions ps ON ps.user_id = u.id
        WHERE u.notification_time IS NOT NULL`
     );
 
-    for (const row of usersResult.rows) {
+    const users = usersResult.rows;
+    console.log('Found users to notify:', users.length);
+
+    for (const row of users) {
       const dbTime = (row.notification_time as string).substring(0, 5);
       if (dbTime !== currentUtcHHMM()) continue;
 
@@ -87,6 +93,7 @@ export async function sendDailyNotifications(): Promise<void> {
 
       try {
         await sendPushNotification(sub, title, body);
+        console.log('Push sent to user:', row.user_id);
       } catch (err) {
         console.error('sendDailyNotifications push error:', row.id, err);
       }
