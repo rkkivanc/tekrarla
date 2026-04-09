@@ -11,6 +11,9 @@ export default defineConfig({
     react(),
     tailwindcss(),
     VitePWA({
+      strategies: 'injectManifest',
+      srcDir: 'public',
+      filename: 'sw-push.js',
       registerType: 'autoUpdate',
       manifest: {
         name: 'Tekrarla',
