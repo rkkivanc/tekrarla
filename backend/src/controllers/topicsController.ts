@@ -7,6 +7,7 @@ type TopicRow = {
   title: string;
   notes: string | null;
   image_url: string | null;
+  subject: string | null;
   created_at: Date;
   next_review_at: Date | null;
   review_count: number;
@@ -26,7 +27,7 @@ export async function getTopics(req: Request, res: Response): Promise<void> {
 
   try {
     const result = await pool.query<TopicRow>(
-      `SELECT id, user_id, title, notes, image_url, created_at, next_review_at, review_count, last_result
+      `SELECT id, user_id, title, notes, image_url, subject, created_at, next_review_at, review_count, last_result
        FROM topics
        WHERE user_id = $1
        ORDER BY created_at DESC`,
@@ -51,6 +52,7 @@ export async function createTopic(req: Request, res: Response): Promise<void> {
     notes?: unknown;
     image_url?: unknown;
     next_review_at?: unknown;
+    subject?: unknown;
   };
 
   if (typeof body.title !== 'string' || !body.title.trim()) {
@@ -62,6 +64,9 @@ export async function createTopic(req: Request, res: Response): Promise<void> {
   const notes = typeof body.notes === 'string' ? body.notes : '';
   const image_url =
     typeof body.image_url === 'string' && body.image_url.trim() ? body.image_url.trim() : null;
+
+  const subject =
+    typeof body.subject === 'string' ? body.subject.trim().toLowerCase() || null : null;
 
   let next_review_at: Date;
   if (typeof body.next_review_at === 'string' && body.next_review_at.trim()) {
@@ -77,10 +82,10 @@ export async function createTopic(req: Request, res: Response): Promise<void> {
 
   try {
     const result = await pool.query<TopicRow>(
-      `INSERT INTO topics (user_id, title, notes, image_url, next_review_at)
-       VALUES ($1, $2, $3, $4, $5)
-       RETURNING id, user_id, title, notes, image_url, created_at, next_review_at, review_count`,
-      [userId, title, notes, image_url, next_review_at]
+      `INSERT INTO topics (user_id, title, notes, image_url, next_review_at, subject)
+       VALUES ($1, $2, $3, $4, $5, $6)
+       RETURNING id, user_id, title, notes, image_url, subject, created_at, next_review_at, review_count, last_result`,
+      [userId, title, notes, image_url, next_review_at, subject]
     );
     const row = result.rows[0];
     if (!row) {
@@ -143,7 +148,7 @@ export async function updateTopic(req: Request, res: Response): Promise<void> {
        SET review_count = $3, next_review_at = $4,
            last_result = COALESCE($5, last_result)
        WHERE id = $1 AND user_id = $2
-       RETURNING id, user_id, title, notes, image_url, created_at, next_review_at, review_count, last_result`,
+       RETURNING id, user_id, title, notes, image_url, subject, created_at, next_review_at, review_count, last_result`,
       [id, userId, body.review_count, nextReviewAt, lastResultParam]
     );
     const row = result.rows[0];
@@ -192,7 +197,7 @@ export async function updateReviewDate(req: Request, res: Response): Promise<voi
       `UPDATE topics
        SET next_review_at = NOW() + make_interval(days => $3::int, hours => $4::int, mins => $5::int)
        WHERE id = $1 AND user_id = $2
-       RETURNING id, user_id, title, notes, image_url, created_at, next_review_at, review_count, last_result`,
+       RETURNING id, user_id, title, notes, image_url, subject, created_at, next_review_at, review_count, last_result`,
       [id, userId, days, hours, minutes]
     );
     const row = result.rows[0];

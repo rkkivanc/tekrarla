@@ -8,9 +8,11 @@ import invitationsRouter from './routes/invitations.js';
 import notificationsRouter from './routes/notifications.js';
 import questionsRouter from './routes/questions.js';
 import settingsRouter from './routes/settings.js';
+import subjectsRouter from './routes/subjects.js';
 import topicsRouter from './routes/topics.js';
 import uploadRouter from './routes/upload.js';
 import voiceNotesRouter from './routes/voiceNotes.js';
+import { requireAuth } from './middleware/auth.js';
 import { sendDailyNotifications } from './services/pushService.js';
 
 const app = express();
@@ -33,6 +35,7 @@ app.get('/', (_req, res) => {
 
 app.use('/api/auth', authRouter);
 app.use('/api/questions', questionsRouter);
+app.use('/api/subjects', requireAuth, subjectsRouter);
 app.use('/api/settings', settingsRouter);
 app.use('/api/upload', uploadRouter);
 app.use('/api/topics', topicsRouter);

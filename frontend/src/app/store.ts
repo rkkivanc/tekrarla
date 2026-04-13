@@ -19,6 +19,7 @@ export interface Topic {
   title: string;
   notes: string;
   imageUrl?: string;
+  subject?: string;
   createdAt: string;
   nextReviewAt: string;
   reviewCount: number;
