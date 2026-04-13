@@ -1,5 +1,6 @@
 import jwt from 'jsonwebtoken';
 import type { Request, Response, NextFunction } from 'express';
+import { pool } from '../db.js';
 
 declare global {
   namespace Express {
@@ -9,7 +10,7 @@ declare global {
   }
 }
 
-export function requireAuth(req: Request, res: Response, next: NextFunction): void {
+export async function requireAuth(req: Request, res: Response, next: NextFunction): Promise<void> {
   const authHeader = req.headers.authorization;
   if (!authHeader?.startsWith('Bearer ')) {
     res.status(401).json({ error: 'Unauthorized' });
@@ -36,6 +37,13 @@ export function requireAuth(req: Request, res: Response, next: NextFunction): vo
     }
     const email = typeof p.email === 'string' ? p.email : '';
     req.user = { id: p.id, email, role: p.role };
+
+    const userExists = await pool.query('SELECT id FROM users WHERE id = $1', [p.id]);
+    if (!userExists.rowCount) {
+      res.status(401).json({ error: 'Unauthorized' });
+      return;
+    }
+
     next();
   } catch {
     res.status(401).json({ error: 'Unauthorized' });
