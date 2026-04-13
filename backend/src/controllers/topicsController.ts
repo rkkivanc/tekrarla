@@ -163,6 +163,104 @@ export async function updateTopic(req: Request, res: Response): Promise<void> {
   }
 }
 
+export async function updateTopicContent(req: Request, res: Response): Promise<void> {
+  const userId = req.user?.id;
+  if (!userId) {
+    res.status(401).json({ error: 'Unauthorized' });
+    return;
+  }
+
+  const { id } = req.params;
+  if (!id) {
+    res.status(400).json({ error: 'id is required' });
+    return;
+  }
+
+  const body = req.body as Record<string, unknown>;
+  const setFragments: string[] = [];
+  const setValues: unknown[] = [];
+  let p = 3;
+
+  if (Object.prototype.hasOwnProperty.call(body, 'title')) {
+    if (typeof body.title !== 'string') {
+      res.status(400).json({ error: 'title must be a string' });
+      return;
+    }
+    const titleVal = body.title.trim();
+    if (!titleVal) {
+      res.status(400).json({ error: 'title cannot be empty' });
+      return;
+    }
+    setFragments.push(`title = $${p++}`);
+    setValues.push(titleVal);
+  }
+
+  if (Object.prototype.hasOwnProperty.call(body, 'subject')) {
+    if (body.subject !== null && typeof body.subject !== 'string') {
+      res.status(400).json({ error: 'subject must be a string or null' });
+      return;
+    }
+    const subjectVal =
+      body.subject === null
+        ? null
+        : (() => {
+            const t = (body.subject as string).trim().toLowerCase();
+            return t === '' ? null : t;
+          })();
+    setFragments.push(`subject = $${p++}`);
+    setValues.push(subjectVal);
+  }
+
+  if (Object.prototype.hasOwnProperty.call(body, 'notes')) {
+    if (typeof body.notes !== 'string') {
+      res.status(400).json({ error: 'notes must be a string' });
+      return;
+    }
+    setFragments.push(`notes = $${p++}`);
+    setValues.push(body.notes);
+  }
+
+  if (Object.prototype.hasOwnProperty.call(body, 'image_url')) {
+    if (body.image_url !== null && typeof body.image_url !== 'string') {
+      res.status(400).json({ error: 'image_url must be a string or null' });
+      return;
+    }
+    const imageVal =
+      body.image_url === null
+        ? null
+        : (() => {
+            const t = (body.image_url as string).trim();
+            return t === '' ? null : t;
+          })();
+    setFragments.push(`image_url = $${p++}`);
+    setValues.push(imageVal);
+  }
+
+  if (setFragments.length === 0) {
+    res.status(400).json({ error: 'No fields to update' });
+    return;
+  }
+
+  try {
+    const result = await pool.query<TopicRow>(
+      `UPDATE topics
+       SET ${setFragments.join(', ')}
+       WHERE id = $1 AND user_id = $2
+       RETURNING id, user_id, title, notes, image_url, subject, created_at, next_review_at, review_count, last_result`,
+      [id, userId, ...setValues]
+    );
+    const row = result.rows[0];
+    if (!row) {
+      res.status(404).json({ error: 'Topic not found' });
+      return;
+    }
+    res.json(row);
+  } catch (err) {
+    console.error('updateTopicContent error:', err);
+    res.status(500).json({ error: 'Failed to update topic' });
+  }
+}
+
 export async function updateReviewDate(req: Request, res: Response): Promise<void> {
   const userId = req.user?.id;
   if (!userId) {

@@ -5,6 +5,7 @@ import {
   getTopics,
   updateReviewDate,
   updateTopic,
+  updateTopicContent,
 } from '../controllers/topicsController.js';
 import { requireAuth } from '../middleware/auth.js';
 
@@ -15,6 +16,7 @@ router.use(requireAuth);
 router.get('/', getTopics);
 router.post('/', createTopic);
 router.patch('/:id/review-date', updateReviewDate);
+router.patch('/:id/content', updateTopicContent);
 router.patch('/:id', updateTopic);
 router.delete('/:id', deleteTopic);
 

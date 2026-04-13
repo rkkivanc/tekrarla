@@ -192,6 +192,107 @@ export async function updateQuestion(req: Request, res: Response): Promise<void>
   }
 }
 
+export async function updateQuestionContent(req: Request, res: Response): Promise<void> {
+  const userId = req.user?.id;
+  if (!userId) {
+    res.status(401).json({ error: 'Unauthorized' });
+    return;
+  }
+
+  const { id } = req.params;
+  if (!id) {
+    res.status(400).json({ error: 'id is required' });
+    return;
+  }
+
+  const body = req.body as Record<string, unknown>;
+  const setFragments: string[] = [];
+  const setValues: unknown[] = [];
+  let p = 3;
+
+  if (Object.prototype.hasOwnProperty.call(body, 'subject')) {
+    if (body.subject !== null && typeof body.subject !== 'string') {
+      res.status(400).json({ error: 'subject must be a string or null' });
+      return;
+    }
+    const subjectVal =
+      body.subject === null
+        ? null
+        : (() => {
+            const t = (body.subject as string).trim().toLowerCase();
+            return t === '' ? null : t;
+          })();
+    setFragments.push(`subject = $${p++}`);
+    setValues.push(subjectVal);
+  }
+
+  if (Object.prototype.hasOwnProperty.call(body, 'difficulty')) {
+    if (typeof body.difficulty !== 'string') {
+      res.status(400).json({ error: 'difficulty must be a string' });
+      return;
+    }
+    const diffKey = body.difficulty.toLowerCase();
+    if (!['easy', 'medium', 'hard', 'custom'].includes(diffKey)) {
+      res.status(400).json({ error: 'difficulty must be easy, medium, hard, or custom' });
+      return;
+    }
+    setFragments.push(`difficulty = $${p++}`);
+    setValues.push(diffKey);
+  }
+
+  if (Object.prototype.hasOwnProperty.call(body, 'answer_text')) {
+    if (body.answer_text !== null && typeof body.answer_text !== 'string') {
+      res.status(400).json({ error: 'answer_text must be a string or null' });
+      return;
+    }
+    setFragments.push(`answer_text = $${p++}`);
+    setValues.push(body.answer_text === null ? null : body.answer_text);
+  }
+
+  if (Object.prototype.hasOwnProperty.call(body, 'answer_image_url')) {
+    if (body.answer_image_url !== null && typeof body.answer_image_url !== 'string') {
+      res.status(400).json({ error: 'answer_image_url must be a string or null' });
+      return;
+    }
+    setFragments.push(`answer_image_url = $${p++}`);
+    setValues.push(body.answer_image_url === null ? null : body.answer_image_url);
+  }
+
+  if (Object.prototype.hasOwnProperty.call(body, 'image_url')) {
+    if (typeof body.image_url !== 'string' || !body.image_url.trim()) {
+      res.status(400).json({ error: 'image_url must be a non-empty string' });
+      return;
+    }
+    setFragments.push(`image_url = $${p++}`);
+    setValues.push(body.image_url.trim());
+  }
+
+  if (setFragments.length === 0) {
+    res.status(400).json({ error: 'No fields to update' });
+    return;
+  }
+
+  try {
+    const result = await pool.query<QuestionRow>(
+      `UPDATE questions
+       SET ${setFragments.join(', ')}
+       WHERE id = $1 AND user_id = $2
+       RETURNING id, user_id, image_url, answer_image_url, answer_text, difficulty, subject,
+                 created_at, next_review_at, review_count, solved, deleted, last_result`,
+      [id, userId, ...setValues]
+    );
+    const row = result.rows[0];
+    if (!row) {
+      res.status(404).json({ error: 'Question not found' });
+      return;
+    }
+    res.json(row);
+  } catch (err) {
+    console.error('updateQuestionContent error:', err);
+    res.status(500).json({ error: 'Failed to update question' });
+  }
+}
+
 export async function updateReviewDate(req: Request, res: Response): Promise<void> {
   const userId = req.user?.id;
   if (!userId) {

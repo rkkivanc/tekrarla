@@ -1,5 +1,5 @@
 import React, { useState, useRef, useEffect, useCallback, useMemo } from 'react';
-import { Calendar, Camera, ChevronDown, ChevronRight, FolderOpen, Plus, X } from 'lucide-react';
+import { Calendar, Camera, ChevronDown, ChevronRight, FolderOpen, Pencil, Plus, X } from 'lucide-react';
 import imageCompression from 'browser-image-compression';
 import { type Question, getNextReviewDate } from '../store';
 import { api } from '../api';
@@ -94,6 +94,19 @@ export function QuestionsPage() {
   const [reviewDialogOpen, setReviewDialogOpen] = useState(false);
   const [reviewTargetId, setReviewTargetId] = useState<string | null>(null);
   const [reviewDays, setReviewDays] = useState(1);
+  const [editingQuestion, setEditingQuestion] = useState<QuestionWithMeta | null>(null);
+  const [editImg, setEditImg] = useState('');
+  const [editAnswerImg, setEditAnswerImg] = useState('');
+  const [editAnswerText, setEditAnswerText] = useState('');
+  const [editDifficulty, setEditDifficulty] = useState<'easy' | 'medium' | 'hard' | 'custom'>('medium');
+  const [editSubject, setEditSubject] = useState('');
+  const [editAnswerType, setEditAnswerType] = useState<'text' | 'image'>('text');
+  const [editSubjectDropdownOpen, setEditSubjectDropdownOpen] = useState(false);
+  const editSubjectComboRef = useRef<HTMLDivElement>(null);
+  const editQCameraRef = useRef<HTMLInputElement>(null);
+  const editQGalleryRef = useRef<HTMLInputElement>(null);
+  const editACameraRef = useRef<HTMLInputElement>(null);
+  const editAGalleryRef = useRef<HTMLInputElement>(null);
 
   const refreshQuestions = useCallback(async () => {
     try {
@@ -133,6 +146,35 @@ export function QuestionsPage() {
     document.addEventListener('mousedown', onDoc);
     return () => document.removeEventListener('mousedown', onDoc);
   }, [subjectDropdownOpen]);
+
+  useEffect(() => {
+    if (!editSubjectDropdownOpen) return;
+    const onDoc = (e: MouseEvent) => {
+      if (editSubjectComboRef.current && !editSubjectComboRef.current.contains(e.target as Node)) {
+        setEditSubjectDropdownOpen(false);
+      }
+    };
+    document.addEventListener('mousedown', onDoc);
+    return () => document.removeEventListener('mousedown', onDoc);
+  }, [editSubjectDropdownOpen]);
+
+  useEffect(() => {
+    if (!editingQuestion) return;
+    setEditImg(editingQuestion.imageUrl);
+    setEditAnswerImg(editingQuestion.answerImageUrl ?? '');
+    setEditAnswerText(editingQuestion.answerText ?? '');
+    const d = editingQuestion.difficulty as string;
+    setEditDifficulty(
+      d === 'easy' || d === 'medium' || d === 'hard' || d === 'custom'
+        ? (d as 'easy' | 'medium' | 'hard' | 'custom')
+        : 'medium',
+    );
+    setEditSubject(editingQuestion.subject ?? '');
+    const hasText = Boolean(editingQuestion.answerText?.trim());
+    const hasImg = Boolean(editingQuestion.answerImageUrl);
+    setEditAnswerType(hasImg && !hasText ? 'image' : 'text');
+    setEditSubjectDropdownOpen(false);
+  }, [editingQuestion]);
 
   useEffect(() => {
     let cancelled = false;
@@ -240,11 +282,50 @@ export function QuestionsPage() {
     }
   };
 
+  const handleSaveQuestionContent = async () => {
+    if (!editingQuestion) return;
+    if (!editImg.trim()) {
+      toast.error('Lütfen soru fotoğrafı yükleyin');
+      return;
+    }
+    if (editAnswerType === 'text' && !editAnswerText.trim()) {
+      toast.error('Lütfen cevap yazın');
+      return;
+    }
+    if (editAnswerType === 'image' && !editAnswerImg) {
+      toast.error('Lütfen cevap fotoğrafı yükleyin');
+      return;
+    }
+    try {
+      const { data } = await api.patch<QuestionApiRow>(`/questions/${editingQuestion.id}/content`, {
+        image_url: editImg.trim(),
+        subject: editSubject.trim() ? editSubject.trim().toLowerCase() : null,
+        difficulty: editDifficulty,
+        answer_text: editAnswerType === 'text' ? editAnswerText : null,
+        answer_image_url: editAnswerType === 'image' ? editAnswerImg : null,
+      });
+      const updated = mapRowToQuestion(data);
+      setQuestions(prev => prev.map(q => (q.id === updated.id ? updated : q)));
+      setEditingQuestion(null);
+      toast.success('Soru güncellendi');
+    } catch (e) {
+      console.error(e);
+      const msg = isAxiosError(e) ? (e.response?.data as { error?: string })?.error : undefined;
+      toast.error(msg ?? 'Soru güncellenemedi');
+    }
+  };
+
   const filteredSubjects = useMemo(() => {
     const q = subject.trim().toLowerCase();
     if (!q) return existingSubjects;
     return existingSubjects.filter(s => s.toLowerCase().includes(q));
   }, [existingSubjects, subject]);
+
+  const filteredEditSubjects = useMemo(() => {
+    const q = editSubject.trim().toLowerCase();
+    if (!q) return existingSubjects;
+    return existingSubjects.filter(s => s.toLowerCase().includes(q));
+  }, [existingSubjects, editSubject]);
 
   const { subjectGroups, subjectlessQuestions } = useMemo(() => {
     const subjectless: QuestionWithMeta[] = [];
@@ -553,6 +634,7 @@ export function QuestionsPage() {
                         difficultyColor={difficultyColor}
                         openReviewDialog={openReviewDialog}
                         onRequestDelete={setIdToDelete}
+                        onOpenEdit={setEditingQuestion}
                       />
                     ))}
                   </div>
@@ -571,12 +653,255 @@ export function QuestionsPage() {
                   difficultyColor={difficultyColor}
                   openReviewDialog={openReviewDialog}
                   onRequestDelete={setIdToDelete}
+                  onOpenEdit={setEditingQuestion}
                 />
               ))}
             </div>
           )}
         </div>
       )}
+
+      <Dialog
+        open={editingQuestion !== null}
+        onOpenChange={(open) => {
+          if (!open) setEditingQuestion(null);
+        }}
+      >
+        <DialogContent className="max-h-[90vh] overflow-y-auto sm:max-w-lg">
+          <DialogHeader>
+            <DialogTitle>Soruyu düzenle</DialogTitle>
+          </DialogHeader>
+          <div className="grid gap-4 py-2">
+            <div>
+              <label className="text-sm text-muted-foreground mb-1 block">Soru Fotoğrafı *</label>
+              {editImg ? (
+                <div className="relative">
+                  <img src={editImg} alt="Soru" className="w-full max-h-64 object-contain rounded-lg border border-border" />
+                  <button
+                    type="button"
+                    onClick={() => setEditImg('')}
+                    className="absolute top-2 right-2 p-1 rounded-full bg-black/50 text-white"
+                  >
+                    <X className="w-4 h-4" />
+                  </button>
+                </div>
+              ) : (
+                <div className="w-full py-8 border-2 border-dashed border-border rounded-lg flex flex-col items-center gap-3 hover:bg-accent transition-colors">
+                  <Camera className="w-8 h-8 text-muted-foreground md:hidden" />
+                  <button
+                    type="button"
+                    className="hidden md:inline-flex px-4 py-2 rounded-lg border border-border bg-background text-sm"
+                    onClick={() => editQGalleryRef.current?.click()}
+                  >
+                    Dosya Seç
+                  </button>
+                  <div className="flex md:hidden w-full flex-col sm:flex-row gap-2 px-4">
+                    <button
+                      type="button"
+                      className="flex-1 py-2 rounded-lg border border-border bg-background text-sm"
+                      onClick={() => editQCameraRef.current?.click()}
+                    >
+                      Fotoğraf Çek
+                    </button>
+                    <button
+                      type="button"
+                      className="flex-1 py-2 rounded-lg border border-border bg-background text-sm"
+                      onClick={() => editQGalleryRef.current?.click()}
+                    >
+                      Galeriden Seç
+                    </button>
+                  </div>
+                </div>
+              )}
+              <input
+                ref={editQCameraRef}
+                type="file"
+                accept="image/*"
+                capture="environment"
+                className="hidden"
+                onChange={e => {
+                  const f = e.target.files?.[0];
+                  if (f) void handleImageUpload(f, setEditImg);
+                  e.target.value = '';
+                }}
+              />
+              <input
+                ref={editQGalleryRef}
+                type="file"
+                accept="image/*"
+                className="hidden"
+                onChange={e => {
+                  const f = e.target.files?.[0];
+                  if (f) void handleImageUpload(f, setEditImg);
+                  e.target.value = '';
+                }}
+              />
+            </div>
+
+            <div>
+              <label className="text-sm text-muted-foreground mb-1 block">Ders / Konu (opsiyonel)</label>
+              <div className="relative" ref={editSubjectComboRef}>
+                <input
+                  value={editSubject}
+                  onChange={e => {
+                    setEditSubject(e.target.value);
+                    setEditSubjectDropdownOpen(true);
+                  }}
+                  onFocus={() => setEditSubjectDropdownOpen(true)}
+                  onBlur={() => setEditSubject(s => s.trim())}
+                  placeholder="Örn: Matematik, Fizik..."
+                  autoComplete="off"
+                  className="w-full px-3 py-2 rounded-lg border border-border bg-input-background"
+                />
+                {editSubjectDropdownOpen && filteredEditSubjects.length > 0 && (
+                  <ul
+                    className="absolute z-20 mt-1 w-full max-h-48 overflow-y-auto rounded-lg border border-border bg-input-background shadow-md"
+                    role="listbox"
+                  >
+                    {filteredEditSubjects.map(s => (
+                      <li
+                        key={s}
+                        role="option"
+                        className="cursor-pointer px-3 py-2 text-sm hover:bg-accent"
+                        onMouseDown={e => {
+                          e.preventDefault();
+                          setEditSubject(s);
+                          setEditSubjectDropdownOpen(false);
+                        }}
+                      >
+                        {s}
+                      </li>
+                    ))}
+                  </ul>
+                )}
+              </div>
+            </div>
+
+            <div>
+              <label className="text-sm text-muted-foreground mb-1 block">Zorluk *</label>
+              <div className="flex flex-wrap gap-2">
+                {(['hard', 'medium', 'easy', 'custom'] as const).map(d => (
+                  <button
+                    key={d}
+                    type="button"
+                    onClick={() => setEditDifficulty(d)}
+                    className={`flex-1 min-w-[calc(50%-0.25rem)] py-2 rounded-lg border text-sm transition-colors ${editDifficulty === d ? difficultyColor[d] : 'border-border hover:bg-accent'}`}
+                  >
+                    {difficultyLabel[d]}
+                  </button>
+                ))}
+              </div>
+            </div>
+
+            <div>
+              <label className="text-sm text-muted-foreground mb-1 block">Cevap Türü</label>
+              <div className="flex gap-2">
+                <button
+                  type="button"
+                  onClick={() => setEditAnswerType('text')}
+                  className={`flex-1 py-2 rounded-lg border text-sm ${editAnswerType === 'text' ? 'bg-primary text-primary-foreground' : 'border-border'}`}
+                >
+                  Metin
+                </button>
+                <button
+                  type="button"
+                  onClick={() => setEditAnswerType('image')}
+                  className={`flex-1 py-2 rounded-lg border text-sm ${editAnswerType === 'image' ? 'bg-primary text-primary-foreground' : 'border-border'}`}
+                >
+                  Fotoğraf
+                </button>
+              </div>
+            </div>
+
+            {editAnswerType === 'text' ? (
+              <div>
+                <label className="text-sm text-muted-foreground mb-1 block">Cevap *</label>
+                <textarea
+                  value={editAnswerText}
+                  onChange={e => setEditAnswerText(e.target.value)}
+                  rows={3}
+                  placeholder="Cevabı buraya yazın..."
+                  className="w-full px-3 py-2 rounded-lg border border-border bg-input-background resize-none"
+                />
+              </div>
+            ) : (
+              <div>
+                <label className="text-sm text-muted-foreground mb-1 block">Cevap Fotoğrafı *</label>
+                {editAnswerImg ? (
+                  <div className="relative">
+                    <img src={editAnswerImg} alt="Cevap" className="w-full max-h-64 object-contain rounded-lg border border-border" />
+                    <button
+                      type="button"
+                      onClick={() => setEditAnswerImg('')}
+                      className="absolute top-2 right-2 p-1 rounded-full bg-black/50 text-white"
+                    >
+                      <X className="w-4 h-4" />
+                    </button>
+                  </div>
+                ) : (
+                  <div className="w-full py-8 border-2 border-dashed border-border rounded-lg flex flex-col items-center gap-3 hover:bg-accent transition-colors">
+                    <Camera className="w-8 h-8 text-muted-foreground md:hidden" />
+                    <button
+                      type="button"
+                      className="hidden md:inline-flex px-4 py-2 rounded-lg border border-border bg-background text-sm"
+                      onClick={() => editAGalleryRef.current?.click()}
+                    >
+                      Dosya Seç
+                    </button>
+                    <div className="flex md:hidden w-full flex-col sm:flex-row gap-2 px-4">
+                      <button
+                        type="button"
+                        className="flex-1 py-2 rounded-lg border border-border bg-background text-sm"
+                        onClick={() => editACameraRef.current?.click()}
+                      >
+                        Fotoğraf Çek
+                      </button>
+                      <button
+                        type="button"
+                        className="flex-1 py-2 rounded-lg border border-border bg-background text-sm"
+                        onClick={() => editAGalleryRef.current?.click()}
+                      >
+                        Galeriden Seç
+                      </button>
+                    </div>
+                  </div>
+                )}
+                <input
+                  ref={editACameraRef}
+                  type="file"
+                  accept="image/*"
+                  capture="environment"
+                  className="hidden"
+                  onChange={e => {
+                    const f = e.target.files?.[0];
+                    if (f) void handleImageUpload(f, setEditAnswerImg);
+                    e.target.value = '';
+                  }}
+                />
+                <input
+                  ref={editAGalleryRef}
+                  type="file"
+                  accept="image/*"
+                  className="hidden"
+                  onChange={e => {
+                    const f = e.target.files?.[0];
+                    if (f) void handleImageUpload(f, setEditAnswerImg);
+                    e.target.value = '';
+                  }}
+                />
+              </div>
+            )}
+          </div>
+          <DialogFooter>
+            <Button type="button" variant="outline" onClick={() => setEditingQuestion(null)}>
+              İptal
+            </Button>
+            <Button type="button" onClick={() => void handleSaveQuestionContent()}>
+              Kaydet
+            </Button>
+          </DialogFooter>
+        </DialogContent>
+      </Dialog>
 
       <Dialog
         open={reviewDialogOpen}
@@ -639,11 +964,13 @@ function QuestionListCard({
   difficultyColor,
   openReviewDialog,
   onRequestDelete,
+  onOpenEdit,
 }: {
   q: QuestionWithMeta;
   difficultyColor: Record<'easy' | 'medium' | 'hard' | 'custom', string>;
   openReviewDialog: (id: string) => void;
   onRequestDelete: (id: string) => void;
+  onOpenEdit: (question: QuestionWithMeta) => void;
 }) {
   return (
     <div className="relative overflow-hidden rounded-xl border border-border bg-card">
@@ -657,6 +984,14 @@ function QuestionListCard({
             aria-label="Tekrar zamanını ayarla"
           >
             <Calendar className="h-4 w-4" />
+          </button>
+          <button
+            type="button"
+            onClick={() => onOpenEdit(q)}
+            className="rounded-full bg-black/50 p-1 text-white hover:bg-black/70"
+            aria-label="Soruyu düzenle"
+          >
+            <Pencil className="h-4 w-4" />
           </button>
           <button
             type="button"

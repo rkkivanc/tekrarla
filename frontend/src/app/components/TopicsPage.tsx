@@ -1,6 +1,6 @@
 import React from 'react';
 import { useState, useRef, useEffect, useMemo } from 'react';
-import { Plus, X, BookOpen, Camera, Calendar, ChevronDown, ChevronRight, FolderOpen } from 'lucide-react';
+import { Plus, X, BookOpen, Camera, Calendar, ChevronDown, ChevronRight, FolderOpen, Pencil } from 'lucide-react';
 import type { Topic } from '../store';
 import { api } from '../api';
 import imageCompression from 'browser-image-compression';
@@ -81,6 +81,15 @@ export function TopicsPage() {
   const [topicReviewDialogOpen, setTopicReviewDialogOpen] = useState(false);
   const [topicReviewTargetId, setTopicReviewTargetId] = useState<string | null>(null);
   const [topicReviewDays, setTopicReviewDays] = useState(1);
+  const [editingTopic, setEditingTopic] = useState<TopicWithMeta | null>(null);
+  const [editTitle, setEditTitle] = useState('');
+  const [editSubject, setEditSubject] = useState('');
+  const [editNotes, setEditNotes] = useState('');
+  const [editImageUrl, setEditImageUrl] = useState('');
+  const [editSubjectDropdownOpen, setEditSubjectDropdownOpen] = useState(false);
+  const editSubjectComboRef = useRef<HTMLDivElement>(null);
+  const editFileCameraRef = useRef<HTMLInputElement>(null);
+  const editFileGalleryRef = useRef<HTMLInputElement>(null);
 
   useEffect(() => {
     let cancelled = false;
@@ -123,11 +132,37 @@ export function TopicsPage() {
     return () => document.removeEventListener('mousedown', onDoc);
   }, [subjectDropdownOpen]);
 
+  useEffect(() => {
+    if (!editSubjectDropdownOpen) return;
+    const onDoc = (e: MouseEvent) => {
+      if (editSubjectComboRef.current && !editSubjectComboRef.current.contains(e.target as Node)) {
+        setEditSubjectDropdownOpen(false);
+      }
+    };
+    document.addEventListener('mousedown', onDoc);
+    return () => document.removeEventListener('mousedown', onDoc);
+  }, [editSubjectDropdownOpen]);
+
+  useEffect(() => {
+    if (!editingTopic) return;
+    setEditTitle(editingTopic.title);
+    setEditSubject(editingTopic.subject ?? '');
+    setEditNotes(editingTopic.notes);
+    setEditImageUrl(editingTopic.imageUrl ?? '');
+    setEditSubjectDropdownOpen(false);
+  }, [editingTopic]);
+
   const filteredSubjects = useMemo(() => {
     const q = topicSubject.trim().toLowerCase();
     if (!q) return existingSubjects;
     return existingSubjects.filter(s => s.toLowerCase().includes(q));
   }, [existingSubjects, topicSubject]);
+
+  const filteredEditSubjects = useMemo(() => {
+    const q = editSubject.trim().toLowerCase();
+    if (!q) return existingSubjects;
+    return existingSubjects.filter(s => s.toLowerCase().includes(q));
+  }, [existingSubjects, editSubject]);
 
   const { subjectGroups, subjectlessTopics } = useMemo(() => {
     const subjectless: TopicWithMeta[] = [];
@@ -162,7 +197,7 @@ export function TopicsPage() {
     });
   };
 
-  const handleImageUpload = async (file: File) => {
+  const handleImageUpload = async (file: File, setUrl?: (url: string) => void) => {
     try {
       const compressed = await imageCompression(file, {
         maxSizeMB: 1,
@@ -172,7 +207,7 @@ export function TopicsPage() {
       const formData = new FormData();
       formData.append('file', compressed, compressed.name || file.name);
       const { data } = await api.post<{ url: string }>('/upload', formData);
-      setImageUrl(data.url);
+      (setUrl ?? setImageUrl)(data.url);
     } catch {
       toast.error('Fotoğraf yüklenemedi');
     }
@@ -246,6 +281,30 @@ export function TopicsPage() {
       toast.success('Konu silindi');
     } catch {
       toast.error('Konu silinemedi');
+    }
+  };
+
+  const handleSaveTopicContent = async () => {
+    if (!editingTopic) return;
+    if (!editTitle.trim()) {
+      toast.error('Başlık gerekli');
+      return;
+    }
+    try {
+      const { data } = await api.patch<TopicRow>(`/topics/${editingTopic.id}/content`, {
+        title: editTitle.trim(),
+        subject: editSubject.trim() ? editSubject.trim().toLowerCase() : null,
+        notes: editNotes,
+        image_url: editImageUrl.trim() ? editImageUrl.trim() : null,
+      });
+      const updated = rowToTopic(data);
+      setTopics(prev => prev.map(x => (x.id === updated.id ? updated : x)));
+      setEditingTopic(null);
+      toast.success('Konu güncellendi');
+    } catch (e) {
+      console.error(e);
+      const msg = isAxiosError(e) ? (e.response?.data as { error?: string })?.error : undefined;
+      toast.error(msg ?? 'Konu güncellenemedi');
     }
   };
 
@@ -423,6 +482,7 @@ export function TopicsPage() {
                         setExpandedId={setExpandedId}
                         openTopicReviewDialog={openTopicReviewDialog}
                         onRequestDelete={setIdToDelete}
+                        onOpenEdit={setEditingTopic}
                       />
                     ))}
                   </div>
@@ -440,12 +500,158 @@ export function TopicsPage() {
                   setExpandedId={setExpandedId}
                   openTopicReviewDialog={openTopicReviewDialog}
                   onRequestDelete={setIdToDelete}
+                  onOpenEdit={setEditingTopic}
                 />
               ))}
             </div>
           )}
         </div>
       )}
+
+      <Dialog
+        open={editingTopic !== null}
+        onOpenChange={open => {
+          if (!open) setEditingTopic(null);
+        }}
+      >
+        <DialogContent className="max-h-[90vh] overflow-y-auto sm:max-w-lg">
+          <DialogHeader>
+            <DialogTitle>Konuyu düzenle</DialogTitle>
+          </DialogHeader>
+          <div className="grid gap-4 py-2">
+            <div>
+              <label className="text-sm text-muted-foreground mb-1 block">Konu başlığı</label>
+              <input
+                value={editTitle}
+                onChange={e => setEditTitle(e.target.value)}
+                placeholder="Konu başlığı"
+                className="w-full px-3 py-2 rounded-lg border border-border bg-input-background"
+              />
+            </div>
+            <div>
+              <label className="text-sm text-muted-foreground mb-1 block">Ders / Konu (opsiyonel)</label>
+              <div className="relative" ref={editSubjectComboRef}>
+                <input
+                  value={editSubject}
+                  onChange={e => {
+                    setEditSubject(e.target.value);
+                    setEditSubjectDropdownOpen(true);
+                  }}
+                  onFocus={() => setEditSubjectDropdownOpen(true)}
+                  onBlur={() => setEditSubject(s => s.trim())}
+                  placeholder="Örn: Matematik, Fizik..."
+                  autoComplete="off"
+                  className="w-full px-3 py-2 rounded-lg border border-border bg-input-background"
+                />
+                {editSubjectDropdownOpen && filteredEditSubjects.length > 0 && (
+                  <ul
+                    className="absolute z-20 mt-1 w-full max-h-48 overflow-y-auto rounded-lg border border-border bg-input-background shadow-md"
+                    role="listbox"
+                  >
+                    {filteredEditSubjects.map(s => (
+                      <li
+                        key={s}
+                        role="option"
+                        className="cursor-pointer px-3 py-2 text-sm hover:bg-accent"
+                        onMouseDown={e => {
+                          e.preventDefault();
+                          setEditSubject(s);
+                          setEditSubjectDropdownOpen(false);
+                        }}
+                      >
+                        {s}
+                      </li>
+                    ))}
+                  </ul>
+                )}
+              </div>
+            </div>
+            <div>
+              <label className="text-sm text-muted-foreground mb-1 block">Notlar</label>
+              <textarea
+                value={editNotes}
+                onChange={e => setEditNotes(e.target.value)}
+                rows={5}
+                placeholder="Notlarınızı buraya yazın..."
+                className="w-full px-3 py-2 rounded-lg border border-border bg-input-background resize-none"
+              />
+            </div>
+            <div>
+              <label className="text-sm text-muted-foreground mb-1 block">Fotoğraf</label>
+              {editImageUrl ? (
+                <div className="relative">
+                  <img src={editImageUrl} alt="Not" className="w-full max-h-48 object-contain rounded-lg border border-border" />
+                  <button
+                    type="button"
+                    onClick={() => setEditImageUrl('')}
+                    className="absolute top-2 right-2 p-1 rounded-full bg-black/50 text-white"
+                  >
+                    <X className="w-4 h-4" />
+                  </button>
+                </div>
+              ) : (
+                <div className="w-full py-4 border-2 border-dashed border-border rounded-lg flex flex-col items-center gap-3 text-muted-foreground hover:bg-accent">
+                  <Camera className="w-5 h-5 md:hidden" />
+                  <button
+                    type="button"
+                    className="hidden md:inline-flex px-4 py-2 rounded-lg border border-border bg-background text-sm text-foreground"
+                    onClick={() => editFileGalleryRef.current?.click()}
+                  >
+                    Dosya Seç
+                  </button>
+                  <div className="flex md:hidden w-full flex-col sm:flex-row gap-2 px-4">
+                    <button
+                      type="button"
+                      className="flex-1 py-2 rounded-lg border border-border bg-background text-sm text-foreground"
+                      onClick={() => editFileCameraRef.current?.click()}
+                    >
+                      Fotoğraf Çek
+                    </button>
+                    <button
+                      type="button"
+                      className="flex-1 py-2 rounded-lg border border-border bg-background text-sm text-foreground"
+                      onClick={() => editFileGalleryRef.current?.click()}
+                    >
+                      Galeriden Seç
+                    </button>
+                  </div>
+                </div>
+              )}
+              <input
+                ref={editFileCameraRef}
+                type="file"
+                accept="image/*"
+                capture="environment"
+                className="hidden"
+                onChange={async e => {
+                  const file = e.target.files?.[0];
+                  if (file) await handleImageUpload(file, setEditImageUrl);
+                  e.target.value = '';
+                }}
+              />
+              <input
+                ref={editFileGalleryRef}
+                type="file"
+                accept="image/*"
+                className="hidden"
+                onChange={async e => {
+                  const file = e.target.files?.[0];
+                  if (file) await handleImageUpload(file, setEditImageUrl);
+                  e.target.value = '';
+                }}
+              />
+            </div>
+          </div>
+          <DialogFooter>
+            <Button type="button" variant="outline" onClick={() => setEditingTopic(null)}>
+              İptal
+            </Button>
+            <Button type="button" onClick={() => void handleSaveTopicContent()}>
+              Kaydet
+            </Button>
+          </DialogFooter>
+        </DialogContent>
+      </Dialog>
 
       <Dialog
         open={topicReviewDialogOpen}
@@ -509,12 +715,14 @@ function TopicAccordionCard({
   setExpandedId,
   openTopicReviewDialog,
   onRequestDelete,
+  onOpenEdit,
 }: {
   t: TopicWithMeta;
   expandedId: string | null;
   setExpandedId: React.Dispatch<React.SetStateAction<string | null>>;
   openTopicReviewDialog: (id: string) => void;
   onRequestDelete: (id: string) => void;
+  onOpenEdit: (topic: TopicWithMeta) => void;
 }) {
   return (
     <div className="overflow-hidden rounded-xl border border-border bg-card">
@@ -556,6 +764,14 @@ function TopicAccordionCard({
           <p className="whitespace-pre-wrap text-muted-foreground">{t.notes}</p>
           {t.imageUrl && <img src={t.imageUrl} alt="Not" className="mt-3 max-h-48 rounded-lg object-contain" />}
           <div className="mt-3 flex items-center gap-3">
+            <button
+              type="button"
+              onClick={() => onOpenEdit(t)}
+              className="inline-flex items-center justify-center rounded-lg border border-border bg-background p-2 text-foreground hover:bg-accent"
+              aria-label="Konuyu düzenle"
+            >
+              <Pencil className="h-4 w-4" />
+            </button>
             <button type="button" onClick={() => onRequestDelete(t.id)} className="text-sm text-destructive hover:underline">
               Sil
             </button>

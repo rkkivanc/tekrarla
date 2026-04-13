@@ -4,6 +4,7 @@ import {
   deleteQuestion,
   getQuestions,
   updateQuestion,
+  updateQuestionContent,
   updateReviewDate,
 } from '../controllers/questionsController.js';
 import { requireAuth } from '../middleware/auth.js';
@@ -15,6 +16,7 @@ router.use(requireAuth);
 router.get('/', getQuestions);
 router.post('/', createQuestion);
 router.patch('/:id/review-date', updateReviewDate);
+router.patch('/:id/content', updateQuestionContent);
 router.patch('/:id', updateQuestion);
 router.delete('/:id', deleteQuestion);
 
