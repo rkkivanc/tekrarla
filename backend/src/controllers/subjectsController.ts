@@ -10,7 +10,7 @@ export async function getSubjects(req: Request, res: Response): Promise<void> {
 
   try {
     const result = await pool.query<{ subject: string }>(
-      `SELECT DISTINCT subject FROM (
+      `SELECT DISTINCT LOWER(subject) AS subject FROM (
          SELECT subject FROM questions WHERE user_id = $1 AND subject IS NOT NULL AND subject != '' AND deleted = false
          UNION
          SELECT subject FROM topics WHERE user_id = $1 AND subject IS NOT NULL AND subject != ''

@@ -1,5 +1,5 @@
 import React from 'react';
-import { useState, useEffect, useLayoutEffect, useRef } from 'react';
+import { useState, useEffect, useLayoutEffect, useRef, useMemo, useCallback } from 'react';
 import { Check, X, Eye, Trash2, BookOpen, FileQuestion } from 'lucide-react';
 import {
   isDueForReview,
@@ -32,6 +32,42 @@ import { Label } from './ui/label';
 
 type ReviewItem = { type: 'question'; data: Question } | { type: 'topic'; data: Topic };
 
+const NO_SUBJECT_KEY = '__none__';
+const NO_SUBJECT_LABEL = 'Ders belirtilmemiş';
+
+function subjectKeyFromItem(item: ReviewItem): string {
+  const s = item.data.subject;
+  const t = typeof s === 'string' ? s.trim() : '';
+  return t ? t.toLowerCase() : NO_SUBJECT_KEY;
+}
+
+function capitalizeLabel(key: string): string {
+  if (key === NO_SUBJECT_KEY) return NO_SUBJECT_LABEL;
+  return key.charAt(0).toUpperCase() + key.slice(1);
+}
+
+function filterItemsBySubject(items: ReviewItem[], subjectFilter: string[] | null): ReviewItem[] {
+  if (subjectFilter === null) return items;
+  return items.filter(it => subjectFilter.includes(subjectKeyFromItem(it)));
+}
+
+function uniqueSubjectKeysFromDue(due: ReviewItem[]): string[] {
+  const set = new Set<string>();
+  for (const it of due) set.add(subjectKeyFromItem(it));
+  return [...set];
+}
+
+function buildSubjectChipsFromDue(due: ReviewItem[]): { key: string; label: string; count: number }[] {
+  const map = new Map<string, number>();
+  for (const it of due) {
+    const k = subjectKeyFromItem(it);
+    map.set(k, (map.get(k) ?? 0) + 1);
+  }
+  return [...map.entries()]
+    .map(([key, count]) => ({ key, label: capitalizeLabel(key), count }))
+    .sort((a, b) => a.label.localeCompare(b.label, 'tr'));
+}
+
 type QuestionApiRow = {
   id: string;
   image_url: string;
@@ -51,6 +87,7 @@ type TopicApiRow = {
   title: string;
   notes: string | null;
   image_url: string | null;
+  subject?: string | null;
   created_at: string;
   next_review_at: string | null;
   review_count: number;
@@ -79,6 +116,7 @@ function mapTopicRow(row: TopicApiRow): Topic {
     title: row.title,
     notes: row.notes ?? '',
     imageUrl: row.image_url ?? undefined,
+    subject: row.subject ?? undefined,
     createdAt: row.created_at,
     nextReviewAt: row.next_review_at ?? new Date().toISOString(),
     reviewCount: row.review_count,
@@ -86,8 +124,15 @@ function mapTopicRow(row: TopicApiRow): Topic {
 }
 
 export function ReviewPage() {
+  const [rawDueItems, setRawDueItems] = useState<ReviewItem[]>([]);
+  const [rawUpcomingItems, setRawUpcomingItems] = useState<ReviewItem[]>([]);
+  const [sessionDuePool, setSessionDuePool] = useState<ReviewItem[]>([]);
   const [items, setItems] = useState<ReviewItem[]>([]);
-  const [upcomingItems, setUpcomingItems] = useState<ReviewItem[]>([]);
+  const [subjectFilter, setSubjectFilter] = useState<string[] | null>(null);
+  const [filterApplied, setFilterApplied] = useState(false);
+  const [reviewKindTab, setReviewKindTab] = useState<'question' | 'topic'>('question');
+  const [tumuActive, setTumuActive] = useState(true);
+  const [selectedSubjectKeys, setSelectedSubjectKeys] = useState<Set<string>>(() => new Set());
   const [loading, setLoading] = useState(true);
   const [currentIndex, setCurrentIndex] = useState(0);
   const [showAnswer, setShowAnswer] = useState(false);
@@ -153,8 +198,31 @@ export function ReviewPage() {
         const upcomingT = tRes.data
           .filter(row => row.next_review_at != null && !isDueForReview(row.next_review_at))
           .map(row => ({ type: 'topic' as const, data: mapTopicRow(row) }));
-        setItems([...dueQ, ...dueT]);
-        setUpcomingItems([...upcomingQ, ...upcomingT]);
+        const dueAll = [...dueQ, ...dueT];
+        const upcomingAll = [...upcomingQ, ...upcomingT];
+        setRawDueItems(dueAll);
+        setRawUpcomingItems(upcomingAll);
+        const needSubjectFilter = dueAll.length > 0 && uniqueSubjectKeysFromDue(dueAll).length >= 2;
+        if (dueAll.length === 0) {
+          setFilterApplied(false);
+          setSubjectFilter(null);
+          setSessionDuePool([]);
+          setItems([]);
+        } else if (!needSubjectFilter) {
+          setFilterApplied(true);
+          setSubjectFilter(null);
+          setSessionDuePool(dueAll);
+          const initialTab = dueAll.some(i => i.type === 'question') ? 'question' : 'topic';
+          setReviewKindTab(initialTab);
+          setItems(dueAll.filter(i => i.type === initialTab));
+        } else {
+          setFilterApplied(false);
+          setSubjectFilter(null);
+          setSessionDuePool([]);
+          setItems([]);
+          setTumuActive(true);
+          setSelectedSubjectKeys(new Set());
+        }
       } catch (e) {
         console.error(e);
         if (!cancelled) toast.error('Tekrar listesi yüklenemedi');
@@ -166,6 +234,85 @@ export function ReviewPage() {
       cancelled = true;
     };
   }, []);
+
+  const previewSubjectFilter = useMemo((): string[] | null => {
+    if (filterApplied) return subjectFilter;
+    if (tumuActive) return null;
+    if (selectedSubjectKeys.size === 0) return null;
+    return [...selectedSubjectKeys];
+  }, [filterApplied, subjectFilter, tumuActive, selectedSubjectKeys]);
+
+  const previewDueFiltered = useMemo(
+    () => filterItemsBySubject(rawDueItems, previewSubjectFilter),
+    [rawDueItems, previewSubjectFilter],
+  );
+
+  const previewQuestionCount = useMemo(
+    () => previewDueFiltered.filter(i => i.type === 'question').length,
+    [previewDueFiltered],
+  );
+  const previewTopicCount = useMemo(
+    () => previewDueFiltered.filter(i => i.type === 'topic').length,
+    [previewDueFiltered],
+  );
+
+  const upcomingDisplayed = useMemo(
+    () => filterItemsBySubject(rawUpcomingItems, previewSubjectFilter),
+    [rawUpcomingItems, previewSubjectFilter],
+  );
+
+  const subjectChipList = useMemo(() => buildSubjectChipsFromDue(rawDueItems), [rawDueItems]);
+
+  const needsSubjectFilterStep =
+    rawDueItems.length > 0 && uniqueSubjectKeysFromDue(rawDueItems).length >= 2 && !filterApplied;
+
+  const sessionQuestionCount = useMemo(
+    () => sessionDuePool.filter(i => i.type === 'question').length,
+    [sessionDuePool],
+  );
+  const sessionTopicCount = useMemo(
+    () => sessionDuePool.filter(i => i.type === 'topic').length,
+    [sessionDuePool],
+  );
+
+  const handleReviewTabChange = useCallback(
+    (tab: 'question' | 'topic') => {
+      setReviewKindTab(tab);
+      setCurrentIndex(0);
+      setShowAnswer(false);
+      setFlipped(false);
+      if (filterApplied) {
+        setItems(sessionDuePool.filter(i => i.type === tab));
+      }
+    },
+    [filterApplied, sessionDuePool],
+  );
+
+  const handleCommitFilterStart = useCallback(() => {
+    const committed: string[] | null = tumuActive ? null : [...selectedSubjectKeys];
+    if (!tumuActive && (!committed || committed.length === 0)) {
+      toast.error('En az bir ders seç veya Tümü\'yü kullan');
+      return;
+    }
+    const pool = filterItemsBySubject(rawDueItems, committed);
+    if (pool.length === 0) {
+      toast.error('Seçime uygun tekrar yok');
+      return;
+    }
+    const nextTab = pool.some(i => i.type === reviewKindTab)
+      ? reviewKindTab
+      : pool.some(i => i.type === 'question')
+        ? 'question'
+        : 'topic';
+    setSubjectFilter(committed);
+    setFilterApplied(true);
+    setSessionDuePool(pool);
+    setReviewKindTab(nextTab);
+    setItems(pool.filter(i => i.type === nextTab));
+    setCurrentIndex(0);
+    setShowAnswer(false);
+    setFlipped(false);
+  }, [rawDueItems, tumuActive, selectedSubjectKeys, reviewKindTab]);
 
   const current = items[currentIndex];
 
@@ -187,6 +334,11 @@ export function ReviewPage() {
         });
         const updated = mapQuestionRow(data);
         setItems(prev => prev.map((it, i) => (i === currentIndex ? { type: 'question' as const, data: updated } : it)));
+        setSessionDuePool(prev =>
+          prev.map(it =>
+            it.type === 'question' && it.data.id === updated.id ? { type: 'question' as const, data: updated } : it,
+          ),
+        );
       } else {
         const { data } = await api.patch<TopicApiRow>(`/topics/${current.data.id}/review-date`, {
           days,
@@ -195,6 +347,11 @@ export function ReviewPage() {
         });
         const updated = mapTopicRow(data);
         setItems(prev => prev.map((it, i) => (i === currentIndex ? { type: 'topic' as const, data: updated } : it)));
+        setSessionDuePool(prev =>
+          prev.map(it =>
+            it.type === 'topic' && it.data.id === updated.id ? { type: 'topic' as const, data: updated } : it,
+          ),
+        );
       }
       setEditReviewDialogOpen(false);
       toast.success('Tekrar zamanı güncellendi');
@@ -249,8 +406,17 @@ export function ReviewPage() {
 
   const handleStartEarlyRepeat = (item: ReviewItem) => {
     pendingScrollToReviewRef.current = true;
-    setUpcomingItems(prev => prev.filter(x => !(x.type === item.type && x.data.id === item.data.id)));
-    setItems(prev => [item, ...prev]);
+    setRawUpcomingItems(prev => prev.filter(x => !(x.type === item.type && x.data.id === item.data.id)));
+    setSessionDuePool(prev => {
+      if (prev.some(x => x.type === item.type && x.data.id === item.data.id)) return prev;
+      return [item, ...prev];
+    });
+    if (item.type === reviewKindTab) {
+      setItems(prev => {
+        if (prev.some(x => x.type === item.type && x.data.id === item.data.id)) return prev;
+        return [item, ...prev];
+      });
+    }
     setCurrentIndex(0);
     setShowAnswer(false);
     setFlipped(false);
@@ -262,6 +428,7 @@ export function ReviewPage() {
       await api.delete(`/questions/${current.data.id}`);
       toast.success('Soru silindi');
       setDeleteDialogOpen(false);
+      setSessionDuePool(prev => prev.filter(x => !(x.type === 'question' && x.data.id === current.data.id)));
       const newItems = items.filter((_, i) => i !== currentIndex);
       setItems(newItems);
       if (currentIndex >= newItems.length) setCurrentIndex(Math.max(0, newItems.length - 1));
@@ -276,10 +443,23 @@ export function ReviewPage() {
   const next = () => {
     setShowAnswer(false);
     setFlipped(false);
+    const cur = items[currentIndex];
+    if (cur) {
+      setSessionDuePool(prev =>
+        prev.filter(x => !(x.type === cur.type && x.data.id === cur.data.id)),
+      );
+    }
     const newItems = items.filter((_, i) => i !== currentIndex);
     setItems(newItems);
     if (currentIndex >= newItems.length) setCurrentIndex(Math.max(0, newItems.length - 1));
   };
+
+  const showCongrats =
+    !loading &&
+    !needsSubjectFilterStep &&
+    (rawDueItems.length === 0 || (filterApplied && sessionDuePool.length === 0));
+
+  const showReviewShell = !loading && !needsSubjectFilterStep && !showCongrats && filterApplied;
 
   if (loading) {
     return (
@@ -339,26 +519,183 @@ export function ReviewPage() {
         </DialogContent>
       </Dialog>
 
-      {items.length === 0 ? (
+      {showCongrats && (
         <div className="flex flex-col items-center justify-center py-20 text-center">
-          <div className="w-20 h-20 rounded-full bg-green-50 flex items-center justify-center mb-4">
-            <Check className="w-10 h-10 text-green-600" />
+          <div className="mb-4 flex h-20 w-20 items-center justify-center rounded-full bg-green-50">
+            <Check className="h-10 w-10 text-green-600" />
           </div>
           <h2>Tebrikler! 🎉</h2>
-          <p className="text-muted-foreground mt-2">Şu an tekrar edilecek bir şey yok.</p>
-          <p className="text-sm text-muted-foreground mt-1">Yeni sorular ve konular ekleyerek tekrar planını oluştur.</p>
+          <p className="mt-2 text-muted-foreground">Şu an tekrar edilecek bir şey yok.</p>
+          <p className="mt-1 text-sm text-muted-foreground">Yeni sorular ve konular ekleyerek tekrar planını oluştur.</p>
         </div>
-      ) : (
+      )}
+
+      {needsSubjectFilterStep && (
+        <div className="mx-auto flex w-full max-w-md flex-col gap-6">
+          <h2 className="text-center text-lg font-semibold">Hangi dersi tekrar etmek istiyorsun?</h2>
+          <div className="flex flex-wrap justify-center gap-2">
+            <button
+              type="button"
+              onClick={() => {
+                setTumuActive(true);
+                setSelectedSubjectKeys(new Set());
+              }}
+              className={`inline-flex items-center gap-2 rounded-full border px-3 py-2 text-sm font-medium transition-colors ${
+                tumuActive ? 'border-transparent bg-primary text-primary-foreground' : 'border-border bg-background hover:bg-accent'
+              }`}
+            >
+              Tümü
+              <span
+                className={`rounded-full px-2 py-0.5 text-xs ${
+                  tumuActive ? 'bg-primary-foreground/20 text-primary-foreground' : 'bg-muted text-muted-foreground'
+                }`}
+              >
+                {rawDueItems.length}
+              </span>
+            </button>
+            {subjectChipList.map(({ key, label, count }) => (
+              <button
+                key={key}
+                type="button"
+                onClick={() => {
+                  setTumuActive(false);
+                  setSelectedSubjectKeys(prev => {
+                    const n = new Set(prev);
+                    if (n.has(key)) n.delete(key);
+                    else n.add(key);
+                    return n;
+                  });
+                }}
+                className={`inline-flex items-center gap-2 rounded-full border px-3 py-2 text-sm font-medium transition-colors ${
+                  !tumuActive && selectedSubjectKeys.has(key)
+                    ? 'border-transparent bg-primary text-primary-foreground'
+                    : 'border-border bg-background hover:bg-accent'
+                }`}
+              >
+                {label}
+                <span
+                  className={`rounded-full px-2 py-0.5 text-xs ${
+                    !tumuActive && selectedSubjectKeys.has(key)
+                      ? 'bg-primary-foreground/20 text-primary-foreground'
+                      : 'bg-muted text-muted-foreground'
+                  }`}
+                >
+                  {count}
+                </span>
+              </button>
+            ))}
+          </div>
+
+          <div className="flex w-full gap-2">
+            <button
+              type="button"
+              onClick={() => handleReviewTabChange('question')}
+              className={`flex flex-1 items-center justify-center gap-2 rounded-lg border px-3 py-2 text-sm font-medium ${
+                reviewKindTab === 'question'
+                  ? 'border-transparent bg-primary text-primary-foreground'
+                  : 'border-border bg-background'
+              }`}
+            >
+              Sorular
+              <span
+                className={`rounded-full px-2 py-0.5 text-xs ${
+                  reviewKindTab === 'question' ? 'bg-primary-foreground/20' : 'bg-muted text-muted-foreground'
+                }`}
+              >
+                {previewQuestionCount}
+              </span>
+            </button>
+            <button
+              type="button"
+              onClick={() => handleReviewTabChange('topic')}
+              className={`flex flex-1 items-center justify-center gap-2 rounded-lg border px-3 py-2 text-sm font-medium ${
+                reviewKindTab === 'topic'
+                  ? 'border-transparent bg-primary text-primary-foreground'
+                  : 'border-border bg-background'
+              }`}
+            >
+              Konular
+              <span
+                className={`rounded-full px-2 py-0.5 text-xs ${
+                  reviewKindTab === 'topic' ? 'bg-primary-foreground/20' : 'bg-muted text-muted-foreground'
+                }`}
+              >
+                {previewTopicCount}
+              </span>
+            </button>
+          </div>
+
+          <Button type="button" className="w-full" onClick={() => void handleCommitFilterStart()}>
+            Tekrara Başla
+          </Button>
+        </div>
+      )}
+
+      {showReviewShell && (
         <div ref={reviewSectionRef} className="scroll-mt-4">
           <div className="mx-auto flex w-full max-w-md flex-col items-center space-y-4">
-            <div className="flex w-full items-center justify-between">
-              <h1>Tekrar Et</h1>
-              <span className="text-sm text-muted-foreground">{currentIndex + 1} / {items.length}</span>
+            <div className="flex w-full gap-2">
+              <button
+                type="button"
+                onClick={() => handleReviewTabChange('question')}
+                className={`flex flex-1 items-center justify-center gap-2 rounded-lg border px-3 py-2 text-sm font-medium ${
+                  reviewKindTab === 'question'
+                    ? 'border-transparent bg-primary text-primary-foreground'
+                    : 'border-border bg-background'
+                }`}
+              >
+                Sorular
+                <span
+                  className={`rounded-full px-2 py-0.5 text-xs ${
+                    reviewKindTab === 'question' ? 'bg-primary-foreground/20' : 'bg-muted text-muted-foreground'
+                  }`}
+                >
+                  {sessionQuestionCount}
+                </span>
+              </button>
+              <button
+                type="button"
+                onClick={() => handleReviewTabChange('topic')}
+                className={`flex flex-1 items-center justify-center gap-2 rounded-lg border px-3 py-2 text-sm font-medium ${
+                  reviewKindTab === 'topic'
+                    ? 'border-transparent bg-primary text-primary-foreground'
+                    : 'border-border bg-background'
+                }`}
+              >
+                Konular
+                <span
+                  className={`rounded-full px-2 py-0.5 text-xs ${
+                    reviewKindTab === 'topic' ? 'bg-primary-foreground/20' : 'bg-muted text-muted-foreground'
+                  }`}
+                >
+                  {sessionTopicCount}
+                </span>
+              </button>
             </div>
 
-            <div className="h-2 w-full rounded-full bg-muted">
-              <div className="h-2 rounded-full bg-primary transition-all" style={{ width: `${((items.length - items.length + currentIndex) / Math.max(1, items.length)) * 100}%` }} />
+            <div className="flex w-full items-center justify-between">
+              <h1>Tekrar Et</h1>
+              {items.length > 0 && (
+                <span className="text-sm text-muted-foreground">
+                  {currentIndex + 1} / {items.length}
+                </span>
+              )}
             </div>
+
+            {items.length > 0 && (
+              <div className="h-2 w-full rounded-full bg-muted">
+                <div
+                  className="h-2 rounded-full bg-primary transition-all"
+                  style={{ width: `${((currentIndex + 1) / Math.max(1, items.length)) * 100}%` }}
+                />
+              </div>
+            )}
+
+            {items.length === 0 && sessionDuePool.length > 0 && (
+              <p className="py-8 text-center text-muted-foreground">
+                Bu sekmede tekrar sırasında öğe yok. Diğer sekmeyi seçebilirsin.
+              </p>
+            )}
 
             {current && (
               <div className="flex w-full flex-col items-center space-y-4">
@@ -452,11 +789,11 @@ export function ReviewPage() {
         </div>
       )}
 
-      {upcomingItems.length > 0 && (
+      {upcomingDisplayed.length > 0 && (
         <section className="pt-6 border-t border-border mt-8">
           <h2 className="text-lg font-semibold mb-3">Yaklaşan Tekrarlar</h2>
           <ul className="space-y-2">
-            {upcomingItems.map(item => (
+            {upcomingDisplayed.map(item => (
               <li
                 key={`${item.type}-${item.data.id}`}
                 className="flex items-start gap-3 rounded-xl border border-border bg-card p-3 text-left"
