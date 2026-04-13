@@ -1,6 +1,6 @@
 import React from 'react';
 import { useState, useEffect, useLayoutEffect, useRef, useMemo, useCallback } from 'react';
-import { Check, X, Eye, Trash2, BookOpen, FileQuestion } from 'lucide-react';
+import { ArrowLeft, Check, X, Eye, Trash2, BookOpen, FileQuestion } from 'lucide-react';
 import {
   isDueForReview,
   getNextReviewDate,
@@ -48,13 +48,8 @@ function capitalizeLabel(key: string): string {
 
 function filterItemsBySubject(items: ReviewItem[], subjectFilter: string[] | null): ReviewItem[] {
   if (subjectFilter === null) return items;
+  if (subjectFilter.length === 0) return [];
   return items.filter(it => subjectFilter.includes(subjectKeyFromItem(it)));
-}
-
-function uniqueSubjectKeysFromDue(due: ReviewItem[]): string[] {
-  const set = new Set<string>();
-  for (const it of due) set.add(subjectKeyFromItem(it));
-  return [...set];
 }
 
 function buildSubjectChipsFromDue(due: ReviewItem[]): { key: string; label: string; count: number }[] {
@@ -202,19 +197,11 @@ export function ReviewPage() {
         const upcomingAll = [...upcomingQ, ...upcomingT];
         setRawDueItems(dueAll);
         setRawUpcomingItems(upcomingAll);
-        const needSubjectFilter = dueAll.length > 0 && uniqueSubjectKeysFromDue(dueAll).length >= 2;
         if (dueAll.length === 0) {
           setFilterApplied(false);
           setSubjectFilter(null);
           setSessionDuePool([]);
           setItems([]);
-        } else if (!needSubjectFilter) {
-          setFilterApplied(true);
-          setSubjectFilter(null);
-          setSessionDuePool(dueAll);
-          const initialTab = dueAll.some(i => i.type === 'question') ? 'question' : 'topic';
-          setReviewKindTab(initialTab);
-          setItems(dueAll.filter(i => i.type === initialTab));
         } else {
           setFilterApplied(false);
           setSubjectFilter(null);
@@ -222,6 +209,8 @@ export function ReviewPage() {
           setItems([]);
           setTumuActive(true);
           setSelectedSubjectKeys(new Set());
+          const initialTab = dueAll.some(i => i.type === 'question') ? 'question' : 'topic';
+          setReviewKindTab(initialTab);
         }
       } catch (e) {
         console.error(e);
@@ -238,7 +227,7 @@ export function ReviewPage() {
   const previewSubjectFilter = useMemo((): string[] | null => {
     if (filterApplied) return subjectFilter;
     if (tumuActive) return null;
-    if (selectedSubjectKeys.size === 0) return null;
+    if (selectedSubjectKeys.size === 0) return [];
     return [...selectedSubjectKeys];
   }, [filterApplied, subjectFilter, tumuActive, selectedSubjectKeys]);
 
@@ -263,8 +252,38 @@ export function ReviewPage() {
 
   const subjectChipList = useMemo(() => buildSubjectChipsFromDue(rawDueItems), [rawDueItems]);
 
-  const needsSubjectFilterStep =
-    rawDueItems.length > 0 && uniqueSubjectKeysFromDue(rawDueItems).length >= 2 && !filterApplied;
+  const needsSubjectFilterStep = rawDueItems.length > 0 && !filterApplied;
+
+  const sessionComplete =
+    filterApplied && sessionDuePool.length === 0 && items.length === 0;
+
+  const showPartialSessionComplete = !loading && sessionComplete && rawDueItems.length > 0;
+
+  const showFullCongrats =
+    !loading &&
+    rawDueItems.length === 0 &&
+    (!filterApplied || sessionComplete);
+
+  const completedSessionHeadline = useMemo(() => {
+    if (subjectFilter === null) {
+      return 'Tüm derslerinin tekrarını tamamladın!';
+    }
+    if (subjectFilter.length === 1) {
+      return `${capitalizeLabel(subjectFilter[0])} tekrarını tamamladın!`;
+    }
+    return 'Seçili derslerin tekrarını tamamladın!';
+  }, [subjectFilter]);
+
+  const exitReviewToFilter = useCallback(() => {
+    setFilterApplied(false);
+    setCurrentIndex(0);
+    setShowAnswer(false);
+    setFlipped(false);
+    setItems([]);
+    setSessionDuePool([]);
+  }, []);
+
+  const upcomingListForFooter = showFullCongrats ? rawUpcomingItems : upcomingDisplayed;
 
   const sessionQuestionCount = useMemo(
     () => sessionDuePool.filter(i => i.type === 'question').length,
@@ -448,18 +467,15 @@ export function ReviewPage() {
       setSessionDuePool(prev =>
         prev.filter(x => !(x.type === cur.type && x.data.id === cur.data.id)),
       );
+      setRawDueItems(prev => prev.filter(x => !(x.type === cur.type && x.data.id === cur.data.id)));
     }
     const newItems = items.filter((_, i) => i !== currentIndex);
     setItems(newItems);
     if (currentIndex >= newItems.length) setCurrentIndex(Math.max(0, newItems.length - 1));
   };
 
-  const showCongrats =
-    !loading &&
-    !needsSubjectFilterStep &&
-    (rawDueItems.length === 0 || (filterApplied && sessionDuePool.length === 0));
-
-  const showReviewShell = !loading && !needsSubjectFilterStep && !showCongrats && filterApplied;
+  const showReviewShell =
+    !loading && filterApplied && (sessionDuePool.length > 0 || items.length > 0);
 
   if (loading) {
     return (
@@ -519,7 +535,7 @@ export function ReviewPage() {
         </DialogContent>
       </Dialog>
 
-      {showCongrats && (
+      {showFullCongrats && (
         <div className="flex flex-col items-center justify-center py-20 text-center">
           <div className="mb-4 flex h-20 w-20 items-center justify-center rounded-full bg-green-50">
             <Check className="h-10 w-10 text-green-600" />
@@ -527,6 +543,19 @@ export function ReviewPage() {
           <h2>Tebrikler! 🎉</h2>
           <p className="mt-2 text-muted-foreground">Şu an tekrar edilecek bir şey yok.</p>
           <p className="mt-1 text-sm text-muted-foreground">Yeni sorular ve konular ekleyerek tekrar planını oluştur.</p>
+        </div>
+      )}
+
+      {showPartialSessionComplete && (
+        <div className="mx-auto flex w-full max-w-md flex-col items-center gap-4 py-16 text-center">
+          <div className="mb-1 flex h-16 w-16 items-center justify-center rounded-full bg-primary/10">
+            <Check className="h-8 w-8 text-primary" />
+          </div>
+          <h2 className="text-lg font-semibold">{completedSessionHeadline}</h2>
+          <p className="text-sm text-muted-foreground">Diğer derslerde bekleyen tekrarların var.</p>
+          <Button type="button" className="w-full max-w-xs" onClick={exitReviewToFilter}>
+            Diğer Derslere Geç
+          </Button>
         </div>
       )}
 
@@ -625,7 +654,85 @@ export function ReviewPage() {
             </button>
           </div>
 
-          <Button type="button" className="w-full" onClick={() => void handleCommitFilterStart()}>
+          <div className="rounded-lg border border-border bg-muted/30 p-3">
+            <p className="mb-2 text-center text-xs font-medium text-muted-foreground">Tekrar önizlemesi</p>
+            <div className="max-h-60 space-y-3 overflow-y-auto pr-1 text-left">
+              {previewDueFiltered.filter(i => i.type === 'question').length > 0 && (
+                <div>
+                  <p className="mb-1.5 text-xs font-semibold text-foreground">Sorular</p>
+                  <ul className="space-y-2">
+                    {previewDueFiltered
+                      .filter((i): i is Extract<ReviewItem, { type: 'question' }> => i.type === 'question')
+                      .map(i => (
+                        <li
+                          key={`preview-q-${i.data.id}`}
+                          className="flex items-center gap-2 rounded-md border border-border bg-background px-2 py-1.5"
+                        >
+                          <img
+                            src={i.data.imageUrl}
+                            alt=""
+                            className="h-10 w-10 shrink-0 rounded object-cover"
+                          />
+                          <div className="flex min-w-0 flex-1 flex-wrap items-center justify-end gap-1">
+                            <span className="max-w-[6rem] truncate rounded-full bg-muted px-2 py-0.5 text-[10px] font-medium text-muted-foreground">
+                              {i.data.subject?.trim() || 'Ders yok'}
+                            </span>
+                            <span
+                              className={`rounded-full px-2 py-0.5 text-[10px] font-medium ${
+                                i.data.difficulty === 'easy'
+                                  ? 'bg-green-100 text-green-800'
+                                  : i.data.difficulty === 'medium'
+                                    ? 'bg-amber-100 text-amber-800'
+                                    : 'bg-red-100 text-red-800'
+                              }`}
+                            >
+                              {i.data.difficulty === 'easy'
+                                ? 'Kolay'
+                                : i.data.difficulty === 'medium'
+                                  ? 'Orta'
+                                  : 'Zor'}
+                            </span>
+                          </div>
+                        </li>
+                      ))}
+                  </ul>
+                </div>
+              )}
+              {previewDueFiltered.filter(i => i.type === 'topic').length > 0 && (
+                <div>
+                  <p className="mb-1.5 text-xs font-semibold text-foreground">Konular</p>
+                  <ul className="space-y-2">
+                    {previewDueFiltered
+                      .filter((i): i is Extract<ReviewItem, { type: 'topic' }> => i.type === 'topic')
+                      .map(i => (
+                        <li
+                          key={`preview-t-${i.data.id}`}
+                          className="flex items-center gap-2 rounded-md border border-border bg-background px-2 py-1.5"
+                        >
+                          <BookOpen className="h-5 w-5 shrink-0 text-purple-600" aria-hidden />
+                          <div className="min-w-0 flex-1">
+                            <p className="truncate text-sm font-medium">{i.data.title}</p>
+                            <p className="truncate text-xs text-muted-foreground">
+                              {i.data.subject?.trim() || 'Konu'}
+                            </p>
+                          </div>
+                        </li>
+                      ))}
+                  </ul>
+                </div>
+              )}
+              {previewDueFiltered.length === 0 && (
+                <p className="py-2 text-center text-xs text-muted-foreground">Seçime uygun tekrar yok.</p>
+              )}
+            </div>
+          </div>
+
+          <Button
+            type="button"
+            className="w-full"
+            disabled={previewDueFiltered.length === 0}
+            onClick={() => void handleCommitFilterStart()}
+          >
             Tekrara Başla
           </Button>
         </div>
@@ -673,23 +780,42 @@ export function ReviewPage() {
               </button>
             </div>
 
-            <div className="flex w-full items-center justify-between">
-              <h1>Tekrar Et</h1>
+            <div className="flex w-full flex-col gap-2">
+              <div className="flex w-full items-center gap-1">
+                <div className="flex w-[4.5rem] shrink-0 justify-start">
+                  {filterApplied && items.length > 0 && (
+                    <Button
+                      type="button"
+                      variant="ghost"
+                      size="sm"
+                      className="h-8 gap-1 px-1.5 text-muted-foreground"
+                      onClick={exitReviewToFilter}
+                    >
+                      <ArrowLeft className="h-4 w-4" aria-hidden />
+                      Çık
+                    </Button>
+                  )}
+                </div>
+                <div className="flex min-w-0 flex-1 items-center justify-center gap-2">
+                  <h1 className="truncate text-center">Tekrar Et</h1>
+                  {items.length > 0 && (
+                    <span className="shrink-0 text-sm text-muted-foreground">
+                      {currentIndex + 1} / {items.length}
+                    </span>
+                  )}
+                </div>
+                <div className="w-[4.5rem] shrink-0" aria-hidden />
+              </div>
+
               {items.length > 0 && (
-                <span className="text-sm text-muted-foreground">
-                  {currentIndex + 1} / {items.length}
-                </span>
+                <div className="h-2 w-full rounded-full bg-muted">
+                  <div
+                    className="h-2 rounded-full bg-primary transition-all"
+                    style={{ width: `${((currentIndex + 1) / Math.max(1, items.length)) * 100}%` }}
+                  />
+                </div>
               )}
             </div>
-
-            {items.length > 0 && (
-              <div className="h-2 w-full rounded-full bg-muted">
-                <div
-                  className="h-2 rounded-full bg-primary transition-all"
-                  style={{ width: `${((currentIndex + 1) / Math.max(1, items.length)) * 100}%` }}
-                />
-              </div>
-            )}
 
             {items.length === 0 && sessionDuePool.length > 0 && (
               <p className="py-8 text-center text-muted-foreground">
@@ -789,11 +915,11 @@ export function ReviewPage() {
         </div>
       )}
 
-      {upcomingDisplayed.length > 0 && (
+      {upcomingListForFooter.length > 0 && (
         <section className="pt-6 border-t border-border mt-8">
           <h2 className="text-lg font-semibold mb-3">Yaklaşan Tekrarlar</h2>
           <ul className="space-y-2">
-            {upcomingDisplayed.map(item => (
+            {upcomingListForFooter.map(item => (
               <li
                 key={`${item.type}-${item.data.id}`}
                 className="flex items-start gap-3 rounded-xl border border-border bg-card p-3 text-left"
