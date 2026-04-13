@@ -61,6 +61,54 @@ export async function updateUserRole(req: Request, res: Response): Promise<void>
     return;
   }
 
+  if (role === 'student') {
+    const client = await pool.connect();
+    try {
+      await client.query('BEGIN');
+      try {
+        const exists = await client.query(`SELECT 1 FROM users WHERE id = $1`, [id]);
+        if (!exists.rowCount) {
+          await client.query('ROLLBACK');
+          res.status(404).json({ error: 'User not found' });
+          return;
+        }
+        await client.query(`DELETE FROM classes WHERE teacher_id = $1`, [id]);
+        await client.query(`DELETE FROM invitations WHERE teacher_id = $1`, [id]);
+        await client.query(`UPDATE users SET teacher_id = NULL WHERE teacher_id = $1`, [id]);
+        const result = await client.query<UserRow>(
+          `UPDATE users SET role = 'student' WHERE id = $1
+           RETURNING id, name, email, role, created_at`,
+          [id],
+        );
+        const row = result.rows[0];
+        if (!row) {
+          await client.query('ROLLBACK');
+          res.status(404).json({ error: 'User not found' });
+          return;
+        }
+        await client.query('COMMIT');
+        res.json({
+          id: row.id,
+          name: row.name,
+          email: row.email,
+          role: row.role,
+          created_at: row.created_at,
+        });
+      } catch (inner) {
+        await client.query('ROLLBACK');
+        throw inner;
+      }
+    } catch (err) {
+      console.error('updateUserRole error:', err);
+      if (!res.headersSent) {
+        res.status(500).json({ error: 'Failed to update role' });
+      }
+    } finally {
+      client.release();
+    }
+    return;
+  }
+
   try {
     const result = await pool.query<UserRow>(
       `UPDATE users SET role = $1 WHERE id = $2

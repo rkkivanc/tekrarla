@@ -11,3 +11,20 @@ api.interceptors.request.use(config => {
   }
   return config;
 });
+
+api.interceptors.response.use(
+  response => response,
+  error => {
+    const url = (error.config?.url as string | undefined) || '';
+    if (
+      error.response?.status === 401 &&
+      !url.includes('/auth/login') &&
+      !url.includes('/auth/register')
+    ) {
+      localStorage.removeItem('token');
+      localStorage.removeItem('user');
+      window.location.href = '/login';
+    }
+    return Promise.reject(error);
+  },
+);

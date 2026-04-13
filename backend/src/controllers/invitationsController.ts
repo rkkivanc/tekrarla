@@ -37,6 +37,11 @@ export async function sendInvitation(req: Request, res: Response): Promise<void>
       return;
     }
 
+    if (student.id === teacherId) {
+      res.status(400).json({ error: 'Kendinizi sınıfınıza ekleyemezsiniz' });
+      return;
+    }
+
     const existing = await pool.query<{ id: string; status: string }>(
       `SELECT id, status FROM invitations WHERE teacher_id = $1 AND student_email = $2`,
       [teacherId, student.email]

@@ -1,5 +1,6 @@
 import React, { useEffect, useRef, useState } from 'react';
 import { useNavigate } from 'react-router';
+import { isAxiosError } from 'axios';
 import { api } from '../api';
 
 const TURNSTILE_SITE_KEY = import.meta.env.VITE_TURNSTILE_SITE_KEY || '';
@@ -80,8 +81,18 @@ export function RegisterPage() {
       localStorage.setItem('user', JSON.stringify(response.data.user));
       resetTurnstile();
       navigate('/');
-    } catch {
-      setError('Kayıt başarısız, tekrar deneyin');
+    } catch (err) {
+      const apiError =
+        isAxiosError(err) && err.response?.data && typeof (err.response.data as { error?: unknown }).error === 'string'
+          ? (err.response.data as { error: string }).error
+          : '';
+      if (apiError === 'Bot doğrulaması gerekli' || apiError === 'Bot doğrulaması başarısız') {
+        setError('Güvenlik doğrulaması başarısız. Lütfen sayfayı yenileyip tekrar deneyin.');
+      } else if (apiError === 'Email already registered') {
+        setError('Bu e-posta zaten kayıtlı');
+      } else {
+        setError('Kayıt başarısız. Lütfen tekrar deneyin.');
+      }
       resetTurnstile();
     }
   }
