@@ -27,14 +27,10 @@ type DifficultySettings = { hard: number; medium: number; easy: number };
 
 const DEFAULT_DIFFICULTY_SETTINGS: DifficultySettings = { hard: 1, medium: 3, easy: 5 };
 
-function nextReviewAtFromOffsets(days: number, hours: number, minutes: number): string {
+function nextReviewAtFromDays(days: number): string {
   const d0 = Number.isFinite(days) ? Math.floor(days) : 0;
-  const h0 = Number.isFinite(hours) ? Math.floor(hours) : 0;
-  const m0 = Number.isFinite(minutes) ? Math.floor(minutes) : 0;
   const d = Math.min(365, Math.max(0, d0));
-  const h = Math.min(23, Math.max(0, h0));
-  const m = Math.min(59, Math.max(0, m0));
-  return new Date(Date.now() + d * 86_400_000 + h * 3_600_000 + m * 60_000).toISOString();
+  return new Date(Date.now() + d * 86400000).toISOString();
 }
 
 type QuestionApiRow = {
@@ -79,8 +75,6 @@ export function QuestionsPage() {
   const [answerText, setAnswerText] = useState('');
   const [difficulty, setDifficulty] = useState<'easy' | 'medium' | 'hard' | 'custom'>('medium');
   const [customDays, setCustomDays] = useState(1);
-  const [customHours, setCustomHours] = useState(0);
-  const [customMinutes, setCustomMinutes] = useState(0);
   const [subject, setSubject] = useState('');
   const [answerType, setAnswerType] = useState<'text' | 'image'>('text');
   const qCameraRef = useRef<HTMLInputElement>(null);
@@ -92,8 +86,6 @@ export function QuestionsPage() {
   const [reviewDialogOpen, setReviewDialogOpen] = useState(false);
   const [reviewTargetId, setReviewTargetId] = useState<string | null>(null);
   const [reviewDays, setReviewDays] = useState(1);
-  const [reviewHours, setReviewHours] = useState(0);
-  const [reviewMinutes, setReviewMinutes] = useState(0);
 
   const refreshQuestions = useCallback(async () => {
     try {
@@ -150,7 +142,7 @@ export function QuestionsPage() {
     try {
       const next_review_at =
         difficulty === 'custom'
-          ? nextReviewAtFromOffsets(customDays, customHours, customMinutes)
+          ? nextReviewAtFromDays(customDays)
           : getNextReviewDate(difficulty, difficultySettings);
       await api.post('/questions', {
         image_url: questionImg,
@@ -168,8 +160,6 @@ export function QuestionsPage() {
       setSubject('');
       setDifficulty('medium');
       setCustomDays(1);
-      setCustomHours(0);
-      setCustomMinutes(0);
       toast.success('Soru eklendi! Tekrar tarihi belirlendi.');
     } catch (e) {
       console.error(e);
@@ -180,24 +170,18 @@ export function QuestionsPage() {
   const openReviewDialog = (questionId: string) => {
     setReviewTargetId(questionId);
     setReviewDays(1);
-    setReviewHours(0);
-    setReviewMinutes(0);
     setReviewDialogOpen(true);
   };
 
   const handleSaveReviewDate = async () => {
     if (!reviewTargetId) return;
     const d0 = Number.isFinite(reviewDays) ? Math.floor(reviewDays) : 1;
-    const h0 = Number.isFinite(reviewHours) ? Math.floor(reviewHours) : 0;
-    const m0 = Number.isFinite(reviewMinutes) ? Math.floor(reviewMinutes) : 0;
     const days = Math.min(365, Math.max(0, d0));
-    const hours = Math.min(23, Math.max(0, h0));
-    const minutes = Math.min(59, Math.max(0, m0));
     try {
       const { data } = await api.patch<QuestionApiRow>(`/questions/${reviewTargetId}/review-date`, {
         days,
-        hours,
-        minutes,
+        hours: 0,
+        minutes: 0,
       });
       const updated = mapRowToQuestion(data);
       setQuestions(prev => prev.map(q => (q.id === updated.id ? updated : q)));
@@ -327,8 +311,8 @@ export function QuestionsPage() {
               ))}
             </div>
             {difficulty === 'custom' && (
-              <div className="grid grid-cols-1 sm:grid-cols-3 gap-3 mt-3">
-                <label className="flex flex-col gap-1 text-sm">
+              <div className="mt-3">
+                <label className="flex flex-col gap-1 text-sm max-w-xs">
                   <span className="text-muted-foreground">Gün</span>
                   <input
                     type="number"
@@ -336,28 +320,6 @@ export function QuestionsPage() {
                     max={365}
                     value={customDays}
                     onChange={e => setCustomDays(Number(e.target.value))}
-                    className="rounded-md border border-input bg-background px-3 py-2 text-sm"
-                  />
-                </label>
-                <label className="flex flex-col gap-1 text-sm">
-                  <span className="text-muted-foreground">Saat</span>
-                  <input
-                    type="number"
-                    min={0}
-                    max={23}
-                    value={customHours}
-                    onChange={e => setCustomHours(Number(e.target.value))}
-                    className="rounded-md border border-input bg-background px-3 py-2 text-sm"
-                  />
-                </label>
-                <label className="flex flex-col gap-1 text-sm">
-                  <span className="text-muted-foreground">Dakika</span>
-                  <input
-                    type="number"
-                    min={0}
-                    max={59}
-                    value={customMinutes}
-                    onChange={e => setCustomMinutes(Number(e.target.value))}
                     className="rounded-md border border-input bg-background px-3 py-2 text-sm"
                   />
                 </label>
@@ -519,28 +481,6 @@ export function QuestionsPage() {
                 max={365}
                 value={reviewDays}
                 onChange={e => setReviewDays(Number(e.target.value))}
-                className="rounded-md border border-input bg-background px-3 py-2 text-sm"
-              />
-            </label>
-            <label className="flex flex-col gap-1 text-sm">
-              <span className="text-muted-foreground">Saat</span>
-              <input
-                type="number"
-                min={0}
-                max={23}
-                value={reviewHours}
-                onChange={e => setReviewHours(Number(e.target.value))}
-                className="rounded-md border border-input bg-background px-3 py-2 text-sm"
-              />
-            </label>
-            <label className="flex flex-col gap-1 text-sm">
-              <span className="text-muted-foreground">Dakika</span>
-              <input
-                type="number"
-                min={0}
-                max={59}
-                value={reviewMinutes}
-                onChange={e => setReviewMinutes(Number(e.target.value))}
                 className="rounded-md border border-input bg-background px-3 py-2 text-sm"
               />
             </label>

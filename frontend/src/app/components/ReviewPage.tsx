@@ -10,16 +10,23 @@ import {
 } from '../store';
 import { api } from '../api';
 import { toast } from 'sonner';
+import { isAxiosError } from 'axios';
 import {
   AlertDialog,
   AlertDialogCancel,
   AlertDialogContent,
-  AlertDialogDescription,
   AlertDialogFooter,
   AlertDialogHeader,
   AlertDialogTitle,
 } from './ui/alert-dialog';
 import { Button } from './ui/button';
+import {
+  Dialog,
+  DialogContent,
+  DialogFooter,
+  DialogHeader,
+  DialogTitle,
+} from './ui/dialog';
 import { Input } from './ui/input';
 import { Label } from './ui/label';
 
@@ -47,6 +54,7 @@ type TopicApiRow = {
   created_at: string;
   next_review_at: string | null;
   review_count: number;
+  last_result?: string | null;
 };
 
 function mapQuestionRow(row: QuestionApiRow): Question {
@@ -63,13 +71,6 @@ function mapQuestionRow(row: QuestionApiRow): Question {
     solved: row.solved,
     deleted: row.deleted,
   };
-}
-
-function intervalDaysForDifficulty(
-  difficulty: Question['difficulty'],
-  settings: DifficultyIntervalSettings,
-): number {
-  return difficulty === 'hard' ? settings.hard : difficulty === 'medium' ? settings.medium : settings.easy;
 }
 
 function mapTopicRow(row: TopicApiRow): Topic {
@@ -91,18 +92,9 @@ export function ReviewPage() {
   const [currentIndex, setCurrentIndex] = useState(0);
   const [showAnswer, setShowAnswer] = useState(false);
   const [flipped, setFlipped] = useState(false);
-  const [isCurrentEarlyReview, setIsCurrentEarlyReview] = useState(false);
-  const [positiveIntervalDialogOpen, setPositiveIntervalDialogOpen] = useState(false);
-  const [positiveIntervalFor, setPositiveIntervalFor] = useState<'question' | 'topic' | null>(null);
-  const [positiveDays, setPositiveDays] = useState(3);
-  const [positiveHours, setPositiveHours] = useState(0);
-  const [positiveMinutes, setPositiveMinutes] = useState(0);
-  const [failedDialogOpen, setFailedDialogOpen] = useState(false);
-  const [failedFlow, setFailedFlow] = useState<'question' | 'topic' | null>(null);
-  const [failedDays, setFailedDays] = useState(1);
-  const [failedHours, setFailedHours] = useState(0);
-  const [failedMinutes, setFailedMinutes] = useState(0);
   const [deleteDialogOpen, setDeleteDialogOpen] = useState(false);
+  const [editReviewDialogOpen, setEditReviewDialogOpen] = useState(false);
+  const [editReviewDays, setEditReviewDays] = useState(1);
   const [difficultyIntervals, setDifficultyIntervals] = useState<DifficultyIntervalSettings>({
     hard: 1,
     medium: 3,
@@ -177,106 +169,55 @@ export function ReviewPage() {
 
   const current = items[currentIndex];
 
-  const openFailedDialog = (flow: 'question' | 'topic') => {
-    setFailedFlow(flow);
-    setFailedDays(1);
-    setFailedHours(0);
-    setFailedMinutes(0);
-    setFailedDialogOpen(true);
+  const openEditReviewDialog = () => {
+    setEditReviewDays(1);
+    setEditReviewDialogOpen(true);
   };
 
-  const openPositiveIntervalDialog = (forKind: 'question' | 'topic') => {
-    if (forKind === 'question') {
-      if (!current || current.type !== 'question') return;
-      setPositiveDays(intervalDaysForDifficulty(current.data.difficulty, difficultyIntervals));
-    } else {
-      setPositiveDays(3);
-    }
-    setPositiveHours(0);
-    setPositiveMinutes(0);
-    setPositiveIntervalFor(forKind);
-    setPositiveIntervalDialogOpen(true);
-  };
-
-  const confirmPositiveInterval = () => {
-    if (!positiveIntervalFor) return;
-    const kind = positiveIntervalFor;
-    const d = Math.max(0, Math.floor(Number(positiveDays)) || 0);
-    const h = Math.max(0, Math.floor(Number(positiveHours)) || 0);
-    const m = Math.max(0, Math.floor(Number(positiveMinutes)) || 0);
-    const ms = d * 86_400_000 + h * 3_600_000 + m * 60_000;
-    const iso = new Date(Date.now() + ms).toISOString();
-    setPositiveIntervalDialogOpen(false);
-    setPositiveIntervalFor(null);
-    const early = isCurrentEarlyReview;
-    if (kind === 'question') {
-      void handleSolved(true, { earlyReview: early, customNextReviewAt: iso });
-    } else {
-      void handleTopicReview('understood', { earlyReview: early, customNextReviewAt: iso });
-    }
-  };
-
-  const confirmFailedSchedule = () => {
-    if (!failedFlow) return;
-    const flow = failedFlow;
-    const d = Math.max(0, Math.floor(Number(failedDays)) || 0);
-    const h = Math.max(0, Math.floor(Number(failedHours)) || 0);
-    const m = Math.max(0, Math.floor(Number(failedMinutes)) || 0);
-    const ms = d * 86_400_000 + h * 3_600_000 + m * 60_000;
-    const iso = new Date(Date.now() + ms).toISOString();
-    setFailedDialogOpen(false);
-    setFailedFlow(null);
-    const early = isCurrentEarlyReview;
-    if (flow === 'question') {
-      void handleSolved(false, { earlyReview: early, customNextReviewAt: iso });
-    } else {
-      void handleTopicReview('not_understood', { earlyReview: early, customNextReviewAt: iso });
-    }
-  };
-
-  const handleSolved = async (
-    solved: boolean,
-    opts?: { earlyReview?: boolean; customNextReviewAt?: string },
-  ) => {
-    if (!current || current.type !== 'question') return;
-    const isEarly = opts?.earlyReview ?? isCurrentEarlyReview;
-    const customNext = opts?.customNextReviewAt;
-    const q = current.data;
+  const handleSaveEditReviewDate = async () => {
+    if (!current) return;
+    const d0 = Number.isFinite(editReviewDays) ? Math.floor(editReviewDays) : 1;
+    const days = Math.min(365, Math.max(0, d0));
     try {
-      if (isEarly) {
-        const preserved = q.nextReviewAt;
-        const nextAt = customNext ?? preserved;
-        await api.patch(`/questions/${q.id}`, {
-          solved,
-          review_count: q.reviewCount + 1,
-          next_review_at: nextAt,
-          last_result: solved ? 'solved' : 'failed',
+      if (current.type === 'question') {
+        const { data } = await api.patch<QuestionApiRow>(`/questions/${current.data.id}/review-date`, {
+          days,
+          hours: 0,
+          minutes: 0,
         });
-        toast.success(solved ? 'Harika! Başardın! 🎉' : 'Tekrar zamanı ayarlandı');
-        next();
-        return;
-      }
-
-      if (solved) {
-        const nextAt = customNext ?? getNextReviewDate(q.difficulty, difficultyIntervals);
-        await api.patch(`/questions/${q.id}`, {
-          solved: true,
-          review_count: q.reviewCount + 1,
-          next_review_at: nextAt,
-          last_result: 'solved',
-        });
+        const updated = mapQuestionRow(data);
+        setItems(prev => prev.map((it, i) => (i === currentIndex ? { type: 'question' as const, data: updated } : it)));
       } else {
-        if (!customNext) {
-          toast.error('Geçerli bir tekrar tarihi gerekli');
-          return;
-        }
-        await api.patch(`/questions/${q.id}`, {
-          solved: false,
-          review_count: q.reviewCount + 1,
-          next_review_at: customNext,
-          last_result: 'failed',
+        const { data } = await api.patch<TopicApiRow>(`/topics/${current.data.id}/review-date`, {
+          days,
+          hours: 0,
+          minutes: 0,
         });
+        const updated = mapTopicRow(data);
+        setItems(prev => prev.map((it, i) => (i === currentIndex ? { type: 'topic' as const, data: updated } : it)));
       }
+      setEditReviewDialogOpen(false);
+      toast.success('Tekrar zamanı güncellendi');
+    } catch (e) {
+      console.error(e);
+      const msg = isAxiosError(e) ? (e.response?.data as { error?: string })?.error : undefined;
+      toast.error(msg ?? 'Tekrar zamanı güncellenemedi');
+    }
+  };
+
+  const handleSolved = async (solved: boolean) => {
+    if (!current || current.type !== 'question') return;
+    const q = current.data;
+    const nextAt = solved
+      ? getNextReviewDate(q.difficulty, difficultyIntervals)
+      : new Date(Date.now() + 86400000).toISOString();
+    try {
+      await api.patch(`/questions/${q.id}`, {
+        solved,
+        review_count: q.reviewCount + 1,
+        next_review_at: nextAt,
+        last_result: solved ? 'solved' : 'failed',
+      });
       toast.success(solved ? 'Harika! Başardın! 🎉' : 'Tekrar zamanı ayarlandı');
       next();
     } catch (e) {
@@ -285,39 +226,14 @@ export function ReviewPage() {
     }
   };
 
-  const handleTopicReview = async (
-    lastResult: 'understood' | 'not_understood',
-    opts?: { earlyReview?: boolean; customNextReviewAt?: string },
-  ) => {
+  const handleTopicReview = async (lastResult: 'understood' | 'not_understood') => {
     if (!current || current.type !== 'topic') return;
-    const isEarly = opts?.earlyReview ?? isCurrentEarlyReview;
-    const customNext = opts?.customNextReviewAt;
     const t = current.data;
+    const nextReviewAt =
+      lastResult === 'understood'
+        ? new Date(Date.now() + 3 * 86400000).toISOString()
+        : new Date(Date.now() + 86400000).toISOString();
     try {
-      if (isEarly) {
-        const preserved = t.nextReviewAt;
-        const nextAt = customNext ?? preserved;
-        await api.patch(`/topics/${t.id}`, {
-          review_count: t.reviewCount + 1,
-          next_review_at: nextAt,
-          last_result: lastResult,
-        });
-        toast.success(lastResult === 'understood' ? 'Harika! Başardın! 🎉' : 'Tekrar zamanı ayarlandı');
-        next();
-        return;
-      }
-
-      let nextReviewAt: string;
-      if (lastResult === 'understood') {
-        nextReviewAt =
-          customNext ?? new Date(Date.now() + 3 * 86_400_000).toISOString();
-      } else {
-        if (!customNext) {
-          toast.error('Geçerli bir tekrar tarihi gerekli');
-          return;
-        }
-        nextReviewAt = customNext;
-      }
       await api.patch(`/topics/${t.id}`, {
         review_count: t.reviewCount + 1,
         next_review_at: nextReviewAt,
@@ -338,7 +254,6 @@ export function ReviewPage() {
     setCurrentIndex(0);
     setShowAnswer(false);
     setFlipped(false);
-    setIsCurrentEarlyReview(true);
   };
 
   const handleDelete = async () => {
@@ -361,7 +276,6 @@ export function ReviewPage() {
   const next = () => {
     setShowAnswer(false);
     setFlipped(false);
-    setIsCurrentEarlyReview(false);
     const newItems = items.filter((_, i) => i !== currentIndex);
     setItems(newItems);
     if (currentIndex >= newItems.length) setCurrentIndex(Math.max(0, newItems.length - 1));
@@ -391,110 +305,39 @@ export function ReviewPage() {
         </AlertDialogContent>
       </AlertDialog>
 
-      <AlertDialog
-        open={positiveIntervalDialogOpen}
+      <Dialog
+        open={editReviewDialogOpen}
         onOpenChange={open => {
-          setPositiveIntervalDialogOpen(open);
-          if (!open) setPositiveIntervalFor(null);
+          setEditReviewDialogOpen(open);
         }}
       >
-        <AlertDialogContent>
-          <AlertDialogHeader>
-            <AlertDialogTitle>Bir sonraki tekrar ne zaman olsun?</AlertDialogTitle>
-          </AlertDialogHeader>
+        <DialogContent className="sm:max-w-md">
+          <DialogHeader>
+            <DialogTitle>Tekrar Zamanını Düzenle</DialogTitle>
+          </DialogHeader>
           <div className="grid gap-3 py-2">
             <div className="grid gap-1.5">
-              <Label htmlFor="positive-days">Gün</Label>
+              <Label htmlFor="edit-review-days">Gün (şu andan itibaren)</Label>
               <Input
-                id="positive-days"
+                id="edit-review-days"
                 type="number"
                 min={0}
-                value={positiveDays}
-                onChange={e => setPositiveDays(Number(e.target.value))}
-              />
-            </div>
-            <div className="grid gap-1.5">
-              <Label htmlFor="positive-hours">Saat</Label>
-              <Input
-                id="positive-hours"
-                type="number"
-                min={0}
-                value={positiveHours}
-                onChange={e => setPositiveHours(Number(e.target.value))}
-              />
-            </div>
-            <div className="grid gap-1.5">
-              <Label htmlFor="positive-minutes">Dakika</Label>
-              <Input
-                id="positive-minutes"
-                type="number"
-                min={0}
-                value={positiveMinutes}
-                onChange={e => setPositiveMinutes(Number(e.target.value))}
+                max={365}
+                value={editReviewDays}
+                onChange={e => setEditReviewDays(Number(e.target.value))}
               />
             </div>
           </div>
-          <AlertDialogFooter>
-            <AlertDialogCancel type="button">İptal</AlertDialogCancel>
-            <Button type="button" onClick={() => confirmPositiveInterval()}>
-              Tamam
+          <DialogFooter>
+            <Button type="button" variant="outline" onClick={() => setEditReviewDialogOpen(false)}>
+              İptal
             </Button>
-          </AlertDialogFooter>
-        </AlertDialogContent>
-      </AlertDialog>
-
-      <AlertDialog
-        open={failedDialogOpen}
-        onOpenChange={open => {
-          setFailedDialogOpen(open);
-          if (!open) setFailedFlow(null);
-        }}
-      >
-        <AlertDialogContent>
-          <AlertDialogHeader>
-            <AlertDialogTitle>Sorun değil!</AlertDialogTitle>
-            <AlertDialogDescription>Bir sonraki tekrar ne zaman olsun?</AlertDialogDescription>
-          </AlertDialogHeader>
-          <div className="grid gap-3 py-2">
-            <div className="grid gap-1.5">
-              <Label htmlFor="failed-days">Gün</Label>
-              <Input
-                id="failed-days"
-                type="number"
-                min={0}
-                value={failedDays}
-                onChange={e => setFailedDays(Number(e.target.value))}
-              />
-            </div>
-            <div className="grid gap-1.5">
-              <Label htmlFor="failed-hours">Saat</Label>
-              <Input
-                id="failed-hours"
-                type="number"
-                min={0}
-                value={failedHours}
-                onChange={e => setFailedHours(Number(e.target.value))}
-              />
-            </div>
-            <div className="grid gap-1.5">
-              <Label htmlFor="failed-minutes">Dakika</Label>
-              <Input
-                id="failed-minutes"
-                type="number"
-                min={0}
-                value={failedMinutes}
-                onChange={e => setFailedMinutes(Number(e.target.value))}
-              />
-            </div>
-          </div>
-          <AlertDialogFooter>
-            <AlertDialogCancel type="button">İptal</AlertDialogCancel>
-            <Button type="button" onClick={() => confirmFailedSchedule()}>
-              Tekrar Ayarla
+            <Button type="button" onClick={() => void handleSaveEditReviewDate()}>
+              Kaydet
             </Button>
-          </AlertDialogFooter>
-        </AlertDialogContent>
-      </AlertDialog>
+          </DialogFooter>
+        </DialogContent>
+      </Dialog>
 
       {items.length === 0 ? (
         <div className="flex flex-col items-center justify-center py-20 text-center">
@@ -546,7 +389,7 @@ export function ReviewPage() {
                         <>
                           <button
                             type="button"
-                            onClick={() => openFailedDialog('question')}
+                            onClick={() => void handleSolved(false)}
                             className="flex flex-1 items-center justify-center gap-2 rounded-xl bg-red-100 py-3 text-red-700"
                           >
                             <X className="h-5 w-5" />
@@ -554,7 +397,7 @@ export function ReviewPage() {
                           </button>
                           <button
                             type="button"
-                            onClick={() => openPositiveIntervalDialog('question')}
+                            onClick={() => void handleSolved(true)}
                             className="flex flex-1 items-center justify-center gap-2 rounded-xl bg-green-100 py-3 text-green-700"
                           >
                             <Check className="h-5 w-5" />
@@ -565,7 +408,7 @@ export function ReviewPage() {
                         <>
                           <button
                             type="button"
-                            onClick={() => openFailedDialog('topic')}
+                            onClick={() => void handleTopicReview('not_understood')}
                             className="flex flex-1 items-center justify-center gap-2 rounded-xl bg-red-100 py-3 text-red-700"
                           >
                             <X className="h-5 w-5" />
@@ -573,7 +416,7 @@ export function ReviewPage() {
                           </button>
                           <button
                             type="button"
-                            onClick={() => openPositiveIntervalDialog('topic')}
+                            onClick={() => void handleTopicReview('understood')}
                             className="flex flex-1 items-center justify-center gap-2 rounded-xl bg-green-100 py-3 text-green-700"
                           >
                             <Check className="h-5 w-5" />
@@ -582,6 +425,15 @@ export function ReviewPage() {
                         </>
                       )}
                     </div>
+                    <Button
+                      type="button"
+                      variant="outline"
+                      size="sm"
+                      className="w-full h-8 text-xs"
+                      onClick={() => openEditReviewDialog()}
+                    >
+                      Tekrar Zamanını Düzenle
+                    </Button>
                     {current.type === 'question' && (
                       <button
                         type="button"
