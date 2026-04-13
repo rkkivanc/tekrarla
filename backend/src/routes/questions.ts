@@ -7,11 +7,7 @@ import {
   updateQuestionContent,
   updateReviewDate,
 } from '../controllers/questionsController.js';
-import { requireAuth } from '../middleware/auth.js';
-
 const router = Router();
-
-router.use(requireAuth);
 
 router.get('/', getQuestions);
 router.post('/', createQuestion);

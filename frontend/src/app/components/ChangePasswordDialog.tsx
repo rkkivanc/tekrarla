@@ -6,31 +6,31 @@ import { Button } from './ui/button';
 import {
   Dialog,
   DialogContent,
-  DialogFooter,
   DialogHeader,
   DialogTitle,
 } from './ui/dialog';
 import { Input } from './ui/input';
 
-type ChangePasswordDialogProps = {
-  open: boolean;
-  onOpenChange: (open: boolean) => void;
+export type ChangePasswordFormProps = {
+  onSuccess: () => void;
+  /** When false, clears fields (e.g. dialog closed). */
+  active?: boolean;
 };
 
-export function ChangePasswordDialog({ open, onOpenChange }: ChangePasswordDialogProps) {
+export function ChangePasswordForm({ onSuccess, active = true }: ChangePasswordFormProps) {
   const [currentPassword, setCurrentPassword] = useState('');
   const [newPassword, setNewPassword] = useState('');
   const [confirmPassword, setConfirmPassword] = useState('');
   const [saving, setSaving] = useState(false);
 
   useEffect(() => {
-    if (!open) {
+    if (!active) {
       setCurrentPassword('');
       setNewPassword('');
       setConfirmPassword('');
       setSaving(false);
     }
-  }, [open]);
+  }, [active]);
 
   const passwordsMismatch =
     confirmPassword.length > 0 && newPassword !== confirmPassword;
@@ -48,8 +48,8 @@ export function ChangePasswordDialog({ open, onOpenChange }: ChangePasswordDialo
     setSaving(true);
     try {
       await api.patch('/auth/change-password', { currentPassword, newPassword });
-      toast.success('Şifre güncellendi');
-      onOpenChange(false);
+      localStorage.removeItem('forcePasswordChange');
+      onSuccess();
     } catch (err) {
       const msg = isAxiosError(err)
         ? (err.response?.data as { error?: string })?.error
@@ -61,47 +61,64 @@ export function ChangePasswordDialog({ open, onOpenChange }: ChangePasswordDialo
   }
 
   return (
+    <form onSubmit={handleSave} className="grid gap-4 w-full max-w-md">
+      <div className="grid gap-4 py-2">
+        <Input
+          type="password"
+          placeholder="Mevcut şifreniz"
+          value={currentPassword}
+          onChange={e => setCurrentPassword(e.target.value)}
+          autoComplete="current-password"
+          disabled={saving}
+        />
+        <Input
+          type="password"
+          placeholder="Yeni şifre (min 6 karakter)"
+          value={newPassword}
+          onChange={e => setNewPassword(e.target.value)}
+          autoComplete="new-password"
+          disabled={saving}
+        />
+        <Input
+          type="password"
+          placeholder="Yeni şifre tekrar"
+          value={confirmPassword}
+          onChange={e => setConfirmPassword(e.target.value)}
+          autoComplete="new-password"
+          disabled={saving}
+        />
+        {passwordsMismatch && (
+          <p className="text-sm text-red-600 dark:text-red-400">Şifreler eşleşmiyor</p>
+        )}
+      </div>
+      <div className="flex justify-end">
+        <Button type="submit" disabled={saving || !canSubmit}>
+          {saving ? 'Kaydediliyor…' : 'Kaydet'}
+        </Button>
+      </div>
+    </form>
+  );
+}
+
+type ChangePasswordDialogProps = {
+  open: boolean;
+  onOpenChange: (open: boolean) => void;
+};
+
+export function ChangePasswordDialog({ open, onOpenChange }: ChangePasswordDialogProps) {
+  return (
     <Dialog open={open} onOpenChange={onOpenChange}>
       <DialogContent className="sm:max-w-md">
-        <form onSubmit={handleSave}>
-          <DialogHeader>
-            <DialogTitle>Şifre Değiştir</DialogTitle>
-          </DialogHeader>
-          <div className="grid gap-4 py-2">
-            <Input
-              type="password"
-              placeholder="Mevcut şifreniz"
-              value={currentPassword}
-              onChange={e => setCurrentPassword(e.target.value)}
-              autoComplete="current-password"
-              disabled={saving}
-            />
-            <Input
-              type="password"
-              placeholder="Yeni şifre (min 6 karakter)"
-              value={newPassword}
-              onChange={e => setNewPassword(e.target.value)}
-              autoComplete="new-password"
-              disabled={saving}
-            />
-            <Input
-              type="password"
-              placeholder="Yeni şifre tekrar"
-              value={confirmPassword}
-              onChange={e => setConfirmPassword(e.target.value)}
-              autoComplete="new-password"
-              disabled={saving}
-            />
-            {passwordsMismatch && (
-              <p className="text-sm text-red-600 dark:text-red-400">Şifreler eşleşmiyor</p>
-            )}
-          </div>
-          <DialogFooter>
-            <Button type="submit" disabled={saving || !canSubmit}>
-              {saving ? 'Kaydediliyor…' : 'Kaydet'}
-            </Button>
-          </DialogFooter>
-        </form>
+        <DialogHeader>
+          <DialogTitle>Şifre Değiştir</DialogTitle>
+        </DialogHeader>
+        <ChangePasswordForm
+          active={open}
+          onSuccess={() => {
+            toast.success('Şifre güncellendi');
+            onOpenChange(false);
+          }}
+        />
       </DialogContent>
     </Dialog>
   );

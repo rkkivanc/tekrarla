@@ -109,9 +109,9 @@ export async function login(req: Request, res: Response): Promise<void> {
     }
 
     const result = await pool.query<
-      UserPublic & { password_hash: string | null }
+      UserPublic & { password_hash: string | null; force_password_change: boolean }
     >(
-      'SELECT id, name, email, role, password_hash FROM users WHERE email = $1',
+      'SELECT id, name, email, role, password_hash, force_password_change FROM users WHERE email = $1',
       [email.trim()]
     );
 
@@ -148,6 +148,7 @@ export async function login(req: Request, res: Response): Promise<void> {
         email: user.email,
         role: user.role,
       },
+      forcePasswordChange: Boolean(row.force_password_change),
     });
   } catch (err) {
     console.error('login error:', err);
@@ -198,7 +199,10 @@ export async function changePassword(req: Request, res: Response): Promise<void>
     }
 
     const password_hash = await bcrypt.hash(newPassword, SALT_ROUNDS);
-    await pool.query('UPDATE users SET password_hash = $1 WHERE id = $2', [password_hash, userId]);
+    await pool.query(
+      'UPDATE users SET password_hash = $1, force_password_change = false WHERE id = $2',
+      [password_hash, userId],
+    );
 
     res.json({ message: 'Şifre güncellendi' });
   } catch (err) {

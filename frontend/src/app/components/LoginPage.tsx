@@ -66,6 +66,9 @@ export function LoginPage() {
       const response = await api.post('/auth/login', { email, password, turnstileToken });
       localStorage.setItem('token', response.data.token);
       localStorage.setItem('user', JSON.stringify(response.data.user));
+      if (response.data.forcePasswordChange) {
+        localStorage.setItem('forcePasswordChange', 'true');
+      }
       resetTurnstile();
       navigate('/');
     } catch (err) {

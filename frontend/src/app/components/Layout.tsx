@@ -11,7 +11,7 @@ import {
   AlertDialogHeader,
   AlertDialogTitle,
 } from './ui/alert-dialog';
-import { ChangePasswordDialog } from './ChangePasswordDialog';
+import { ChangePasswordDialog, ChangePasswordForm } from './ChangePasswordDialog';
 
 type BeforeInstallPromptEvent = Event & {
   prompt: () => Promise<void>;
@@ -88,6 +88,8 @@ export function Layout() {
     return null;
   }
 
+  const forcePasswordChange = localStorage.getItem('forcePasswordChange') === 'true';
+
   const navItems = [
     { path: '/', label: 'Ana Sayfa', icon: Home },
     { path: '/questions', label: 'Sorular', icon: FileQuestion },
@@ -113,6 +115,21 @@ export function Layout() {
 
   return (
     <div className="min-h-screen bg-background flex flex-col">
+      {forcePasswordChange && (
+        <div className="fixed inset-0 z-[9999] bg-background flex flex-col items-center justify-center p-4">
+          <div className="w-full max-w-md space-y-6">
+            <h2 className="text-xl font-semibold text-center text-foreground">
+              Şifrenizi değiştirmeniz gerekmektedir
+            </h2>
+            <ChangePasswordForm
+              onSuccess={() => {
+                window.location.reload();
+              }}
+            />
+          </div>
+        </div>
+      )}
+
       {/* Top bar */}
       <header className="bg-primary text-primary-foreground px-4 py-3 flex items-center justify-between sticky top-0 z-50">
         <div className="flex items-center gap-3">

@@ -17,6 +17,15 @@ api.interceptors.response.use(
   (error) => {
     const url = error.config?.url || '';
     if (
+      error.response?.status === 403 &&
+      (error.response?.data as { error?: string })?.error === 'PASSWORD_CHANGE_REQUIRED' &&
+      !url.includes('/auth/change-password')
+    ) {
+      localStorage.setItem('forcePasswordChange', 'true');
+      window.location.href = '/';
+      return Promise.reject(error);
+    }
+    if (
       error.response?.status === 401 &&
       !url.includes('/auth/login') &&
       !url.includes('/auth/register')
