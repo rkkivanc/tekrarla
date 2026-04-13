@@ -1,5 +1,5 @@
 import { Outlet, useNavigate, useLocation } from 'react-router';
-import { Home, BookOpen, FileQuestion, Mic, Users, LogOut, X, Shield } from 'lucide-react';
+import { Home, BookOpen, FileQuestion, Mic, Users, LogOut, X, Shield, Settings } from 'lucide-react';
 import { type User } from '../store';
 import React, { useState, useEffect } from 'react';
 import {
@@ -11,6 +11,7 @@ import {
   AlertDialogHeader,
   AlertDialogTitle,
 } from './ui/alert-dialog';
+import { ChangePasswordDialog } from './ChangePasswordDialog';
 
 type BeforeInstallPromptEvent = Event & {
   prompt: () => Promise<void>;
@@ -34,6 +35,7 @@ export function Layout() {
   });
   const [menuOpen, setMenuOpen] = useState(false);
   const [logoutDialogOpen, setLogoutDialogOpen] = useState(false);
+  const [changePasswordOpen, setChangePasswordOpen] = useState(false);
   const [deferredPrompt, setDeferredPrompt] = useState<BeforeInstallPromptEvent | null>(null);
   const [showIosInstallHint, setShowIosInstallHint] = useState(false);
 
@@ -125,6 +127,14 @@ export function Layout() {
           <span className="text-sm opacity-80 hidden sm:inline">{user.name}</span>
           <button
             type="button"
+            onClick={() => setChangePasswordOpen(true)}
+            className="opacity-80 hover:opacity-100"
+            title="Şifre değiştir"
+          >
+            <Settings className="w-5 h-5" />
+          </button>
+          <button
+            type="button"
             onClick={() => setLogoutDialogOpen(true)}
             className="opacity-80 hover:opacity-100"
             title="Çıkış"
@@ -180,6 +190,8 @@ export function Layout() {
           </div>
         </div>
       )}
+
+      <ChangePasswordDialog open={changePasswordOpen} onOpenChange={setChangePasswordOpen} />
 
       <AlertDialog open={logoutDialogOpen} onOpenChange={setLogoutDialogOpen}>
         <AlertDialogContent>

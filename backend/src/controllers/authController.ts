@@ -154,3 +154,55 @@ export async function login(req: Request, res: Response): Promise<void> {
     res.status(500).json({ error: 'Login failed' });
   }
 }
+
+export async function changePassword(req: Request, res: Response): Promise<void> {
+  const userId = req.user?.id;
+  if (!userId) {
+    res.status(401).json({ error: 'Unauthorized' });
+    return;
+  }
+
+  try {
+    const body = req.body as { currentPassword?: unknown; newPassword?: unknown };
+    const { currentPassword, newPassword } = body;
+
+    if (
+      typeof currentPassword !== 'string' ||
+      typeof newPassword !== 'string' ||
+      currentPassword.length === 0 ||
+      newPassword.length === 0
+    ) {
+      res.status(400).json({ error: 'Mevcut şifre ve yeni şifre gerekli' });
+      return;
+    }
+
+    if (newPassword.length < 6) {
+      res.status(400).json({ error: 'Yeni şifre en az 6 karakter olmalı' });
+      return;
+    }
+
+    const result = await pool.query<{ password_hash: string | null }>(
+      'SELECT password_hash FROM users WHERE id = $1',
+      [userId],
+    );
+    const row = result.rows[0];
+    if (!row?.password_hash) {
+      res.status(401).json({ error: 'Mevcut şifre hatalı' });
+      return;
+    }
+
+    const valid = await bcrypt.compare(currentPassword, row.password_hash);
+    if (!valid) {
+      res.status(401).json({ error: 'Mevcut şifre hatalı' });
+      return;
+    }
+
+    const password_hash = await bcrypt.hash(newPassword, SALT_ROUNDS);
+    await pool.query('UPDATE users SET password_hash = $1 WHERE id = $2', [password_hash, userId]);
+
+    res.json({ message: 'Şifre güncellendi' });
+  } catch (err) {
+    console.error('changePassword error:', err);
+    res.status(500).json({ error: 'Şifre güncellenemedi' });
+  }
+}
