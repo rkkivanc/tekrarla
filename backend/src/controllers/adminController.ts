@@ -234,6 +234,43 @@ function isPushSubscription(value: unknown): value is PushSubscription {
   return typeof k.p256dh === 'string' && typeof k.auth === 'string';
 }
 
+export async function sendNotificationToUser(req: Request, res: Response): Promise<void> {
+  const id = typeof req.params.id === 'string' ? req.params.id : '';
+  if (!id) {
+    res.status(400).json({ error: 'Invalid user id' });
+    return;
+  }
+
+  const body = req.body as { title?: unknown; body?: unknown };
+  const title = typeof body.title === 'string' ? body.title.trim() : '';
+  const messageBody = typeof body.body === 'string' ? body.body.trim() : '';
+  if (!title || !messageBody) {
+    res.status(400).json({ error: 'title and body are required' });
+    return;
+  }
+
+  try {
+    const subResult = await pool.query<{ subscription: unknown }>(
+      `SELECT subscription FROM push_subscriptions WHERE user_id = $1 LIMIT 1`,
+      [id],
+    );
+    const raw = subResult.rows[0]?.subscription;
+    if (raw === undefined) {
+      res.status(404).json({ error: 'Bu kullanıcının bildirim aboneliği yok' });
+      return;
+    }
+    if (!isPushSubscription(raw)) {
+      res.status(500).json({ error: 'Bildirim gönderilemedi' });
+      return;
+    }
+    await sendPushNotification(raw, title, messageBody);
+    res.status(200).json({ sent: true });
+  } catch (err) {
+    console.error('sendNotificationToUser error:', err);
+    res.status(500).json({ error: 'Bildirim gönderilemedi' });
+  }
+}
+
 export async function broadcastNotification(req: Request, res: Response): Promise<void> {
   const body = req.body as { title?: unknown; body?: unknown };
   const title = typeof body.title === 'string' ? body.title.trim() : '';

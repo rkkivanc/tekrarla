@@ -102,6 +102,10 @@ export function AdminPage() {
   const [broadcastBody, setBroadcastBody] = useState('');
   const [broadcastSending, setBroadcastSending] = useState(false);
   const [broadcastConfirmOpen, setBroadcastConfirmOpen] = useState(false);
+  const [notifyTarget, setNotifyTarget] = useState<{ userId: string; userName: string } | null>(null);
+  const [notifyTitle, setNotifyTitle] = useState('');
+  const [notifyBody, setNotifyBody] = useState('');
+  const [notifySending, setNotifySending] = useState(false);
 
   const loadStats = useCallback(async () => {
     setStatsLoading(true);
@@ -232,6 +236,26 @@ export function AdminPage() {
     }
   };
 
+  const handleSendUserNotification = async () => {
+    if (!notifyTarget) return;
+    setNotifySending(true);
+    try {
+      await api.post(`/admin/users/${notifyTarget.userId}/notify`, {
+        title: notifyTitle.trim(),
+        body: notifyBody.trim(),
+      });
+      toast.success('Bildirim gönderildi');
+      setNotifyTarget(null);
+      setNotifyTitle('');
+      setNotifyBody('');
+    } catch (err) {
+      const msg = isAxiosError(err) ? (err.response?.data as { error?: string })?.error : undefined;
+      toast.error(msg ?? 'Bildirim gönderilemedi');
+    } finally {
+      setNotifySending(false);
+    }
+  };
+
   const hideDangerForAdminRow = (u: AdminUserRow) => u.role === 'admin';
 
   const statCards = stats
@@ -275,6 +299,21 @@ export function AdminPage() {
             Öğrenci Yap
           </Button>
         )}
+        <Button
+          type="button"
+          size="sm"
+          variant="outline"
+          disabled={busy}
+          className="gap-1 h-8 px-2 text-xs"
+          onClick={() => {
+            setNotifyTarget({ userId: u.id, userName: u.name });
+            setNotifyTitle('');
+            setNotifyBody('');
+          }}
+        >
+          <Bell className="size-3.5 shrink-0" aria-hidden />
+          Bildirim
+        </Button>
         {!hideDanger && (
           <>
             <Button
@@ -503,6 +542,61 @@ export function AdminPage() {
             </Button>
             <Button type="button" onClick={() => setTempPassword(null)}>
               Tamam
+            </Button>
+          </DialogFooter>
+        </DialogContent>
+      </Dialog>
+
+      <Dialog
+        open={notifyTarget !== null}
+        onOpenChange={(open) => {
+          if (!open) {
+            setNotifyTarget(null);
+            setNotifyTitle('');
+            setNotifyBody('');
+          }
+        }}
+      >
+        <DialogContent>
+          <DialogHeader>
+            <DialogTitle>
+              {notifyTarget ? `${notifyTarget.userName} kullanıcısına bildirim gönder` : ''}
+            </DialogTitle>
+          </DialogHeader>
+          <div className="space-y-3">
+            <Input
+              placeholder="Başlık"
+              value={notifyTitle}
+              onChange={(e) => setNotifyTitle(e.target.value)}
+              disabled={notifySending}
+            />
+            <Textarea
+              placeholder="Mesaj"
+              value={notifyBody}
+              onChange={(e) => setNotifyBody(e.target.value)}
+              disabled={notifySending}
+              rows={4}
+            />
+          </div>
+          <DialogFooter>
+            <Button
+              type="button"
+              variant="outline"
+              onClick={() => {
+                setNotifyTarget(null);
+                setNotifyTitle('');
+                setNotifyBody('');
+              }}
+              disabled={notifySending}
+            >
+              İptal
+            </Button>
+            <Button
+              type="button"
+              disabled={notifySending || !notifyTitle.trim() || !notifyBody.trim()}
+              onClick={() => void handleSendUserNotification()}
+            >
+              Gönder
             </Button>
           </DialogFooter>
         </DialogContent>
