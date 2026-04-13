@@ -12,7 +12,8 @@ import subjectsRouter from './routes/subjects.js';
 import topicsRouter from './routes/topics.js';
 import uploadRouter from './routes/upload.js';
 import voiceNotesRouter from './routes/voiceNotes.js';
-import { requireAuth } from './middleware/auth.js';
+import adminRouter from './routes/admin.js';
+import { requireAuth, requireAdmin } from './middleware/auth.js';
 import { sendDailyNotifications } from './services/pushService.js';
 
 const app = express();
@@ -42,6 +43,7 @@ app.use('/api/topics', topicsRouter);
 app.use('/api/voice-notes', voiceNotesRouter);
 app.use('/api/invitations', invitationsRouter);
 app.use('/api/notifications', notificationsRouter);
+app.use('/api/admin', requireAuth, requireAdmin, adminRouter);
 
 cron.schedule('* * * * *', () => {
   void sendDailyNotifications();

@@ -37,7 +37,7 @@ export interface User {
   id: string;
   name: string;
   email: string;
-  role: 'teacher' | 'student';
+  role: 'teacher' | 'student' | 'admin';
   code?: string;
   teacherId?: string;
   avatar?: string;

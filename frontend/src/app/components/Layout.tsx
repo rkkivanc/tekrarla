@@ -1,5 +1,5 @@
 import { Outlet, useNavigate, useLocation } from 'react-router';
-import { Home, BookOpen, FileQuestion, Mic, GraduationCap, Users, LogOut, X } from 'lucide-react';
+import { Home, BookOpen, FileQuestion, Mic, Users, LogOut, X, Shield } from 'lucide-react';
 import { type User } from '../store';
 import React, { useState, useEffect } from 'react';
 import {
@@ -94,7 +94,10 @@ export function Layout() {
     { path: '/voice-notes', label: 'Ses Notları', icon: Mic },
   ];
 
-  if (user.role === 'teacher') {
+  if (user.role === 'admin') {
+    navItems.push({ path: '/admin', label: 'Admin', icon: Shield });
+  }
+  if (user.role === 'teacher' || user.role === 'admin') {
     navItems.push({ path: '/teacher', label: 'Öğretmen Paneli', icon: Users });
   }
 

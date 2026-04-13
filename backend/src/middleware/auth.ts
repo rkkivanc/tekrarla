@@ -41,3 +41,12 @@ export function requireAuth(req: Request, res: Response, next: NextFunction): vo
     res.status(401).json({ error: 'Unauthorized' });
   }
 }
+
+/** Expects `requireAuth` to have run on the same request (sets `req.user`). */
+export function requireAdmin(req: Request, res: Response, next: NextFunction): void {
+  if (req.user?.role !== 'admin') {
+    res.status(403).json({ error: 'Forbidden' });
+    return;
+  }
+  next();
+}
