@@ -19,10 +19,13 @@ api.interceptors.response.use(
     if (
       error.response?.status === 403 &&
       (error.response?.data as { error?: string })?.error === 'PASSWORD_CHANGE_REQUIRED' &&
-      !url.includes('/auth/change-password')
+      !url.includes('/auth/change-password') &&
+      !url.includes('/auth/force-change-password')
     ) {
-      localStorage.setItem('forcePasswordChange', 'true');
-      window.location.href = '/';
+      if (localStorage.getItem('forcePasswordChange') !== 'true') {
+        localStorage.setItem('forcePasswordChange', 'true');
+        window.dispatchEvent(new Event('forcePasswordChange'));
+      }
       return Promise.reject(error);
     }
     if (

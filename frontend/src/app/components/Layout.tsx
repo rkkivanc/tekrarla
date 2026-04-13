@@ -11,7 +11,9 @@ import {
   AlertDialogHeader,
   AlertDialogTitle,
 } from './ui/alert-dialog';
-import { ChangePasswordDialog, ChangePasswordForm } from './ChangePasswordDialog';
+import { toast } from 'sonner';
+import { api } from '../api';
+import { ChangePasswordDialog } from './ChangePasswordDialog';
 
 type BeforeInstallPromptEvent = Event & {
   prompt: () => Promise<void>;
@@ -38,6 +40,12 @@ export function Layout() {
   const [changePasswordOpen, setChangePasswordOpen] = useState(false);
   const [deferredPrompt, setDeferredPrompt] = useState<BeforeInstallPromptEvent | null>(null);
   const [showIosInstallHint, setShowIosInstallHint] = useState(false);
+  const [forcePasswordChange, setForcePasswordChange] = useState(
+    () => localStorage.getItem('forcePasswordChange') === 'true',
+  );
+  const [forceNewPassword, setForceNewPassword] = useState('');
+  const [forceConfirmPassword, setForceConfirmPassword] = useState('');
+  const [forceSaving, setForceSaving] = useState(false);
 
   useEffect(() => {
     if (!user) {
@@ -65,6 +73,12 @@ export function Layout() {
     return () => window.removeEventListener('beforeinstallprompt', onBeforeInstallPrompt);
   }, []);
 
+  useEffect(() => {
+    const handler = () => setForcePasswordChange(true);
+    window.addEventListener('forcePasswordChange', handler);
+    return () => window.removeEventListener('forcePasswordChange', handler);
+  }, []);
+
   const dismissPwaBanner = () => {
     localStorage.setItem(PWA_DISMISSED_KEY, '1');
     setDeferredPrompt(null);
@@ -87,8 +101,6 @@ export function Layout() {
   if (!user) {
     return null;
   }
-
-  const forcePasswordChange = localStorage.getItem('forcePasswordChange') === 'true';
 
   const navItems = [
     { path: '/', label: 'Ana Sayfa', icon: Home },
@@ -121,11 +133,56 @@ export function Layout() {
             <h2 className="text-xl font-semibold text-center text-foreground">
               Şifrenizi değiştirmeniz gerekmektedir
             </h2>
-            <ChangePasswordForm
-              onSuccess={() => {
-                window.location.reload();
-              }}
-            />
+            <div className="space-y-4">
+              <div>
+                <label className="text-sm text-muted-foreground block mb-1">Yeni Şifre</label>
+                <input
+                  type="password"
+                  value={forceNewPassword}
+                  onChange={e => setForceNewPassword(e.target.value)}
+                  placeholder="En az 6 karakter"
+                  className="w-full px-3 py-2 rounded-lg border border-border bg-input-background"
+                />
+              </div>
+              <div>
+                <label className="text-sm text-muted-foreground block mb-1">Yeni Şifre Tekrar</label>
+                <input
+                  type="password"
+                  value={forceConfirmPassword}
+                  onChange={e => setForceConfirmPassword(e.target.value)}
+                  placeholder="Şifreyi tekrar girin"
+                  className="w-full px-3 py-2 rounded-lg border border-border bg-input-background"
+                />
+              </div>
+              {forceNewPassword.length > 0 && forceNewPassword.length < 6 && (
+                <p className="text-sm text-destructive">Şifre en az 6 karakter olmalı</p>
+              )}
+              {forceConfirmPassword.length > 0 && forceNewPassword !== forceConfirmPassword && (
+                <p className="text-sm text-destructive">Şifreler eşleşmiyor</p>
+              )}
+              <button
+                type="button"
+                disabled={
+                  forceSaving ||
+                  forceNewPassword.length < 6 ||
+                  forceNewPassword !== forceConfirmPassword
+                }
+                onClick={async () => {
+                  setForceSaving(true);
+                  try {
+                    await api.patch('/auth/force-change-password', { newPassword: forceNewPassword });
+                    localStorage.removeItem('forcePasswordChange');
+                    window.location.reload();
+                  } catch {
+                    toast.error('Şifre güncellenemedi');
+                    setForceSaving(false);
+                  }
+                }}
+                className="w-full py-3 rounded-lg bg-primary text-primary-foreground disabled:opacity-50"
+              >
+                {forceSaving ? 'Kaydediliyor...' : 'Şifreyi Değiştir'}
+              </button>
+            </div>
           </div>
         </div>
       )}
