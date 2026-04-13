@@ -14,9 +14,11 @@ import uploadRouter from './routes/upload.js';
 import voiceNotesRouter from './routes/voiceNotes.js';
 import adminRouter from './routes/admin.js';
 import { requireAuth, requireAdmin } from './middleware/auth.js';
+import { authLimiter, contentLimiter } from './middleware/rateLimiter.js';
 import { sendDailyNotifications } from './services/pushService.js';
 
 const app = express();
+app.set('trust proxy', 1);
 const port = process.env.PORT ? Number(process.env.PORT) : 3000;
 
 app.use(cors({
@@ -34,7 +36,12 @@ app.get('/', (_req, res) => {
   res.send('Hello from Tekrarla API');
 });
 
-app.use('/api/auth', authRouter);
+app.post('/api/questions', contentLimiter);
+app.post('/api/topics', contentLimiter);
+app.post('/api/voice-notes', contentLimiter);
+app.post('/api/upload', contentLimiter);
+
+app.use('/api/auth', authLimiter, authRouter);
 app.use('/api/questions', questionsRouter);
 app.use('/api/subjects', requireAuth, subjectsRouter);
 app.use('/api/settings', settingsRouter);
