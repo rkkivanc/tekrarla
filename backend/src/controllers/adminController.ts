@@ -197,10 +197,7 @@ export async function resetUserPassword(req: Request, res: Response): Promise<vo
 
   try {
     const password_hash = await bcrypt.hash(plainTextPassword, SALT_ROUNDS);
-    const result = await pool.query(
-      `UPDATE users SET password_hash = $1, force_password_change = true WHERE id = $2`,
-      [password_hash, id],
-    );
+    const result = await pool.query(`UPDATE users SET password_hash = $1 WHERE id = $2`, [password_hash, id]);
     if (!result.rowCount) {
       res.status(404).json({ error: 'User not found' });
       return;

@@ -3,7 +3,7 @@ import multer from 'multer';
 import { GetObjectCommand, HeadObjectCommand, S3Client } from '@aws-sdk/client-s3';
 import type { Readable } from 'node:stream';
 import { uploadFile } from '../r2.js';
-import { requireAuth, requirePasswordChanged } from '../middleware/auth.js';
+import { requireAuth } from '../middleware/auth.js';
 
 const router = Router();
 
@@ -198,7 +198,7 @@ router.get('/:key', async (req, res) => {
   }
 });
 
-router.post('/', requireAuth, requirePasswordChanged, (req, res, next) => {
+router.post('/', requireAuth, (req, res, next) => {
   upload.single('file')(req, res, err => {
     if (err) {
       res.status(400).json({ error: err instanceof Error ? err.message : 'Upload rejected' });

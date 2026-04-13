@@ -109,9 +109,9 @@ export async function login(req: Request, res: Response): Promise<void> {
     }
 
     const result = await pool.query<
-      UserPublic & { password_hash: string | null; force_password_change: boolean }
+      UserPublic & { password_hash: string | null }
     >(
-      'SELECT id, name, email, role, password_hash, force_password_change FROM users WHERE email = $1',
+      'SELECT id, name, email, role, password_hash FROM users WHERE email = $1',
       [email.trim()]
     );
 
@@ -148,7 +148,6 @@ export async function login(req: Request, res: Response): Promise<void> {
         email: user.email,
         role: user.role,
       },
-      forcePasswordChange: Boolean(row.force_password_change),
     });
   } catch (err) {
     console.error('login error:', err);
@@ -199,52 +198,11 @@ export async function changePassword(req: Request, res: Response): Promise<void>
     }
 
     const password_hash = await bcrypt.hash(newPassword, SALT_ROUNDS);
-    await pool.query(
-      'UPDATE users SET password_hash = $1, force_password_change = false WHERE id = $2',
-      [password_hash, userId],
-    );
+    await pool.query('UPDATE users SET password_hash = $1 WHERE id = $2', [password_hash, userId]);
 
     res.json({ message: 'Şifre güncellendi' });
   } catch (err) {
     console.error('changePassword error:', err);
-    res.status(500).json({ error: 'Şifre güncellenemedi' });
-  }
-}
-
-export async function forceChangePassword(req: Request, res: Response): Promise<void> {
-  const userId = req.user?.id;
-  if (!userId) {
-    res.status(401).json({ error: 'Unauthorized' });
-    return;
-  }
-
-  try {
-    const body = req.body as { newPassword?: unknown };
-    const newPassword = typeof body.newPassword === 'string' ? body.newPassword : '';
-
-    if (newPassword.length < 6) {
-      res.status(400).json({ error: 'Yeni şifre en az 6 karakter olmalı' });
-      return;
-    }
-
-    const check = await pool.query<{ force_password_change: boolean }>(
-      'SELECT force_password_change FROM users WHERE id = $1',
-      [userId],
-    );
-    if (!check.rows[0]?.force_password_change) {
-      res.status(403).json({ error: 'Bu işlem için yetkiniz yok' });
-      return;
-    }
-
-    const password_hash = await bcrypt.hash(newPassword, SALT_ROUNDS);
-    await pool.query(
-      'UPDATE users SET password_hash = $1, force_password_change = false WHERE id = $2',
-      [password_hash, userId],
-    );
-
-    res.json({ message: 'Şifre güncellendi' });
-  } catch (err) {
-    console.error('forceChangePassword error:', err);
     res.status(500).json({ error: 'Şifre güncellenemedi' });
   }
 }

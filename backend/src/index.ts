@@ -13,7 +13,7 @@ import topicsRouter from './routes/topics.js';
 import uploadRouter from './routes/upload.js';
 import voiceNotesRouter from './routes/voiceNotes.js';
 import adminRouter from './routes/admin.js';
-import { requireAuth, requireAdmin, requirePasswordChanged } from './middleware/auth.js';
+import { requireAuth, requireAdmin } from './middleware/auth.js';
 import { authLimiter, contentLimiter } from './middleware/rateLimiter.js';
 import { sendDailyNotifications } from './services/pushService.js';
 
@@ -42,16 +42,15 @@ app.post('/api/voice-notes', contentLimiter);
 app.post('/api/upload', contentLimiter);
 
 app.use('/api/auth', authLimiter, authRouter);
-
-app.use('/api/questions', requireAuth, requirePasswordChanged, questionsRouter);
-app.use('/api/subjects', requireAuth, requirePasswordChanged, subjectsRouter);
-app.use('/api/settings', requireAuth, requirePasswordChanged, settingsRouter);
+app.use('/api/questions', questionsRouter);
+app.use('/api/subjects', requireAuth, subjectsRouter);
+app.use('/api/settings', settingsRouter);
 app.use('/api/upload', uploadRouter);
-app.use('/api/topics', requireAuth, requirePasswordChanged, topicsRouter);
-app.use('/api/voice-notes', requireAuth, requirePasswordChanged, voiceNotesRouter);
-app.use('/api/invitations', requireAuth, requirePasswordChanged, invitationsRouter);
+app.use('/api/topics', topicsRouter);
+app.use('/api/voice-notes', voiceNotesRouter);
+app.use('/api/invitations', invitationsRouter);
 app.use('/api/notifications', notificationsRouter);
-app.use('/api/admin', requireAuth, requirePasswordChanged, requireAdmin, adminRouter);
+app.use('/api/admin', requireAuth, requireAdmin, adminRouter);
 
 cron.schedule('* * * * *', () => {
   void sendDailyNotifications();

@@ -17,18 +17,6 @@ api.interceptors.response.use(
   (error) => {
     const url = error.config?.url || '';
     if (
-      error.response?.status === 403 &&
-      (error.response?.data as { error?: string })?.error === 'PASSWORD_CHANGE_REQUIRED' &&
-      !url.includes('/auth/change-password') &&
-      !url.includes('/auth/force-change-password')
-    ) {
-      if (localStorage.getItem('forcePasswordChange') !== 'true') {
-        localStorage.setItem('forcePasswordChange', 'true');
-        window.dispatchEvent(new Event('forcePasswordChange'));
-      }
-      return Promise.reject(error);
-    }
-    if (
       error.response?.status === 401 &&
       !url.includes('/auth/login') &&
       !url.includes('/auth/register')

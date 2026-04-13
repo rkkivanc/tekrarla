@@ -6,7 +6,7 @@ import {
   updateNotificationTime,
 } from '../controllers/notificationsController.js';
 import { pool } from '../db.js';
-import { requireAuth, requirePasswordChanged } from '../middleware/auth.js';
+import { requireAuth } from '../middleware/auth.js';
 
 const router = Router();
 
@@ -19,7 +19,7 @@ router.get('/vapid-public-key', (_req: Request, res: Response) => {
   res.json({ publicKey });
 });
 
-router.use(requireAuth, requirePasswordChanged);
+router.use(requireAuth);
 
 router.get('/settings', getNotificationSettings);
 router.post('/subscribe', saveSubscription);

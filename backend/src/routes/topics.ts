@@ -7,7 +7,11 @@ import {
   updateTopic,
   updateTopicContent,
 } from '../controllers/topicsController.js';
+import { requireAuth } from '../middleware/auth.js';
+
 const router = Router();
+
+router.use(requireAuth);
 
 router.get('/', getTopics);
 router.post('/', createTopic);

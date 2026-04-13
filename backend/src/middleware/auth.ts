@@ -5,7 +5,7 @@ import { pool } from '../db.js';
 declare global {
   namespace Express {
     interface Request {
-      user?: { id: string; email: string; role: string; forcePasswordChange: boolean };
+      user?: { id: string; email: string; role: string };
     }
   }
 }
@@ -36,21 +36,13 @@ export async function requireAuth(req: Request, res: Response, next: NextFunctio
       return;
     }
     const email = typeof p.email === 'string' ? p.email : '';
-    const userExists = await pool.query<{ force_password_change: boolean }>(
-      'SELECT id, force_password_change FROM users WHERE id = $1',
-      [p.id],
-    );
+    req.user = { id: p.id, email, role: p.role };
+
+    const userExists = await pool.query('SELECT id FROM users WHERE id = $1', [p.id]);
     if (!userExists.rowCount) {
       res.status(401).json({ error: 'Unauthorized' });
       return;
     }
-    const dbRow = userExists.rows[0];
-    req.user = {
-      id: p.id,
-      email,
-      role: p.role,
-      forcePasswordChange: Boolean(dbRow?.force_password_change),
-    };
 
     next();
   } catch {
@@ -62,14 +54,6 @@ export async function requireAuth(req: Request, res: Response, next: NextFunctio
 export function requireAdmin(req: Request, res: Response, next: NextFunction): void {
   if (req.user?.role !== 'admin') {
     res.status(403).json({ error: 'Forbidden' });
-    return;
-  }
-  next();
-}
-
-export function requirePasswordChanged(req: Request, res: Response, next: NextFunction): void {
-  if (req.user?.forcePasswordChange) {
-    res.status(403).json({ error: 'PASSWORD_CHANGE_REQUIRED' });
     return;
   }
   next();
