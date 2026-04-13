@@ -278,15 +278,39 @@ export function TopicsPage() {
         <div className="space-y-3">
           {topics.map(t => (
             <div key={t.id} className="bg-card rounded-xl border border-border overflow-hidden">
-              <button onClick={() => setExpandedId(expandedId === t.id ? null : t.id)} className="w-full p-4 text-left flex items-center justify-between">
+              <div
+                role="button"
+                tabIndex={0}
+                onClick={() => setExpandedId(expandedId === t.id ? null : t.id)}
+                onKeyDown={(e) => {
+                  if (e.key === 'Enter' || e.key === ' ') {
+                    e.preventDefault();
+                    setExpandedId(expandedId === t.id ? null : t.id);
+                  }
+                }}
+                className="w-full p-4 text-left flex items-center justify-between cursor-pointer"
+              >
                 <div>
                   <h3>{t.title}</h3>
                   <span className="text-xs text-muted-foreground block">
                     Tekrar: {new Date(t.nextReviewAt).toLocaleDateString('tr-TR')} · {t.reviewCount} tekrar
                   </span>
                 </div>
-                <BookOpen className="w-5 h-5 text-muted-foreground" />
-              </button>
+                <div className="flex items-center gap-2">
+                  <button
+                    type="button"
+                    onClick={(e) => {
+                      e.stopPropagation();
+                      openTopicReviewDialog(t.id);
+                    }}
+                    className="inline-flex items-center justify-center rounded-lg border border-border bg-background p-2 text-foreground hover:bg-accent"
+                    aria-label="Tekrar zamanını ayarla"
+                  >
+                    <Calendar className="w-4 h-4" />
+                  </button>
+                  <BookOpen className="w-5 h-5 text-muted-foreground" />
+                </div>
+              </div>
               {expandedId === t.id && (
                 <div className="px-4 pb-4 border-t border-border pt-3">
                   <p className="whitespace-pre-wrap text-muted-foreground">{t.notes}</p>
@@ -294,14 +318,6 @@ export function TopicsPage() {
                   <div className="mt-3 flex items-center gap-3">
                     <button type="button" onClick={() => setIdToDelete(t.id)} className="text-sm text-destructive hover:underline">
                       Sil
-                    </button>
-                    <button
-                      type="button"
-                      onClick={() => openTopicReviewDialog(t.id)}
-                      className="inline-flex items-center justify-center rounded-lg border border-border bg-background p-2 text-foreground hover:bg-accent"
-                      aria-label="Tekrar zamanını ayarla"
-                    >
-                      <Calendar className="w-4 h-4" />
                     </button>
                   </div>
                 </div>
