@@ -1,6 +1,5 @@
-import React from 'react';
-import { useState, useRef, useEffect, useCallback } from 'react';
-import { Calendar, Camera, Plus, X } from 'lucide-react';
+import React, { useState, useRef, useEffect, useCallback, useMemo } from 'react';
+import { Calendar, Camera, ChevronDown, ChevronRight, FolderOpen, Plus, X } from 'lucide-react';
 import imageCompression from 'browser-image-compression';
 import { type Question, getNextReviewDate } from '../store';
 import { api } from '../api';
@@ -50,6 +49,11 @@ type QuestionApiRow = {
 
 type QuestionWithMeta = Question & { lastResult?: string | null };
 
+function capitalizeSubjectLabel(keyLower: string): string {
+  if (!keyLower) return '';
+  return keyLower.charAt(0).toUpperCase() + keyLower.slice(1);
+}
+
 function mapRowToQuestion(row: QuestionApiRow): QuestionWithMeta {
   return {
     id: row.id,
@@ -76,6 +80,10 @@ export function QuestionsPage() {
   const [difficulty, setDifficulty] = useState<'easy' | 'medium' | 'hard' | 'custom'>('medium');
   const [customDays, setCustomDays] = useState(1);
   const [subject, setSubject] = useState('');
+  const [existingSubjects, setExistingSubjects] = useState<string[]>([]);
+  const [subjectDropdownOpen, setSubjectDropdownOpen] = useState(false);
+  const [openFolders, setOpenFolders] = useState<Set<string>>(() => new Set());
+  const subjectComboRef = useRef<HTMLDivElement>(null);
   const [answerType, setAnswerType] = useState<'text' | 'image'>('text');
   const qCameraRef = useRef<HTMLInputElement>(null);
   const qGalleryRef = useRef<HTMLInputElement>(null);
@@ -99,6 +107,32 @@ export function QuestionsPage() {
   useEffect(() => {
     refreshQuestions();
   }, [refreshQuestions]);
+
+  useEffect(() => {
+    let cancelled = false;
+    (async () => {
+      try {
+        const { data } = await api.get<string[]>('/subjects');
+        if (!cancelled && Array.isArray(data)) setExistingSubjects(data);
+      } catch {
+        if (!cancelled) setExistingSubjects([]);
+      }
+    })();
+    return () => {
+      cancelled = true;
+    };
+  }, []);
+
+  useEffect(() => {
+    if (!subjectDropdownOpen) return;
+    const onDoc = (e: MouseEvent) => {
+      if (subjectComboRef.current && !subjectComboRef.current.contains(e.target as Node)) {
+        setSubjectDropdownOpen(false);
+      }
+    };
+    document.addEventListener('mousedown', onDoc);
+    return () => document.removeEventListener('mousedown', onDoc);
+  }, [subjectDropdownOpen]);
 
   useEffect(() => {
     let cancelled = false;
@@ -206,6 +240,45 @@ export function QuestionsPage() {
     }
   };
 
+  const filteredSubjects = useMemo(() => {
+    const q = subject.trim().toLowerCase();
+    if (!q) return existingSubjects;
+    return existingSubjects.filter(s => s.toLowerCase().includes(q));
+  }, [existingSubjects, subject]);
+
+  const { subjectGroups, subjectlessQuestions } = useMemo(() => {
+    const subjectless: QuestionWithMeta[] = [];
+    const map = new Map<string, QuestionWithMeta[]>();
+    for (const q of questions) {
+      const raw = q.subject?.trim();
+      if (!raw) {
+        subjectless.push(q);
+        continue;
+      }
+      const key = raw.toLowerCase();
+      const arr = map.get(key);
+      if (arr) arr.push(q);
+      else map.set(key, [q]);
+    }
+    const subjectGroups = [...map.entries()]
+      .map(([key, items]) => ({
+        key,
+        label: capitalizeSubjectLabel(key),
+        items,
+      }))
+      .sort((a, b) => a.label.localeCompare(b.label, 'tr'));
+    return { subjectGroups, subjectlessQuestions: subjectless };
+  }, [questions]);
+
+  const toggleFolder = (key: string) => {
+    setOpenFolders(prev => {
+      const next = new Set(prev);
+      if (next.has(key)) next.delete(key);
+      else next.add(key);
+      return next;
+    });
+  };
+
   const difficultyLabel = {
     easy: `Kolay (${difficultySettings.easy} gün)`,
     medium: `Orta (${difficultySettings.medium} gün)`,
@@ -294,10 +367,44 @@ export function QuestionsPage() {
             />
           </div>
 
-          {/* Subject */}
+          {/* Subject combobox */}
           <div>
             <label className="text-sm text-muted-foreground mb-1 block">Ders / Konu (opsiyonel)</label>
-            <input value={subject} onChange={e => setSubject(e.target.value)} placeholder="Örn: Matematik, Fizik..." className="w-full px-3 py-2 rounded-lg border border-border bg-input-background" />
+            <div className="relative" ref={subjectComboRef}>
+              <input
+                value={subject}
+                onChange={e => {
+                  setSubject(e.target.value);
+                  setSubjectDropdownOpen(true);
+                }}
+                onFocus={() => setSubjectDropdownOpen(true)}
+                onBlur={() => setSubject(s => s.trim())}
+                placeholder="Örn: Matematik, Fizik..."
+                autoComplete="off"
+                className="w-full px-3 py-2 rounded-lg border border-border bg-input-background"
+              />
+              {subjectDropdownOpen && filteredSubjects.length > 0 && (
+                <ul
+                  className="absolute z-20 mt-1 w-full max-h-48 overflow-y-auto rounded-lg border border-border bg-input-background shadow-md"
+                  role="listbox"
+                >
+                  {filteredSubjects.map(s => (
+                    <li
+                      key={s}
+                      role="option"
+                      className="cursor-pointer px-3 py-2 text-sm hover:bg-accent"
+                      onMouseDown={e => {
+                        e.preventDefault();
+                        setSubject(s);
+                        setSubjectDropdownOpen(false);
+                      }}
+                    >
+                      {s}
+                    </li>
+                  ))}
+                </ul>
+              )}
+            </div>
           </div>
 
           {/* Difficulty */}
@@ -416,48 +523,58 @@ export function QuestionsPage() {
           <p className="text-sm">Çözemediğiniz soruları ekleyerek tekrar programı oluşturun</p>
         </div>
       ) : (
-        <div className="grid grid-cols-1 sm:grid-cols-2 gap-3">
-          {questions.map(q => (
-            <div key={q.id} className="bg-card rounded-xl border border-border overflow-hidden relative">
-              <div className="relative">
-                <img src={q.imageUrl} alt="Soru" className="w-full h-40 object-cover" />
-                <div className="absolute top-2 right-2 flex gap-1">
-                  <button
-                    type="button"
-                    onClick={() => openReviewDialog(q.id)}
-                    className="p-1 rounded-full bg-black/50 text-white hover:bg-black/70"
-                    aria-label="Tekrar zamanını ayarla"
-                  >
-                    <Calendar className="w-4 h-4" />
-                  </button>
-                  <button
-                    type="button"
-                    onClick={() => setIdToDelete(q.id)}
-                    className="p-1 rounded-full bg-black/50 text-white hover:bg-black/70"
-                    aria-label="Soruyu sil"
-                  >
-                    <X className="w-4 h-4" />
-                  </button>
-                </div>
-              </div>
-              <div className="p-3">
-                <div className="flex items-center justify-between">
-                  <span className={`text-xs px-2 py-0.5 rounded-full ${difficultyColor[q.difficulty as keyof typeof difficultyColor] ?? difficultyColor.medium}`}>
-                    {q.difficulty === 'hard' ? 'Zor' : q.difficulty === 'medium' ? 'Orta' : q.difficulty === 'custom' ? 'Özel' : 'Kolay'}
+        <div className="space-y-2">
+          {subjectGroups.map(({ key, label, items }) => {
+            const open = openFolders.has(key);
+            return (
+              <div key={key}>
+                <button
+                  type="button"
+                  onClick={() => toggleFolder(key)}
+                  className="flex w-full cursor-pointer items-center gap-2 rounded-lg px-3 py-2 text-left hover:bg-accent"
+                >
+                  {open ? (
+                    <ChevronDown className="h-4 w-4 shrink-0 text-muted-foreground" aria-hidden />
+                  ) : (
+                    <ChevronRight className="h-4 w-4 shrink-0 text-muted-foreground" aria-hidden />
+                  )}
+                  <FolderOpen className="h-4 w-4 shrink-0 text-muted-foreground" aria-hidden />
+                  <span className="min-w-0 flex-1 font-medium">{label}</span>
+                  <span className="shrink-0 rounded-full bg-muted px-2 py-0.5 text-xs text-muted-foreground">
+                    {items.length}
                   </span>
-                  {q.subject && <span className="text-xs text-muted-foreground">{q.subject}</span>}
-                </div>
-                <div className="text-xs text-muted-foreground mt-2">
-                  Tekrar: {new Date(q.nextReviewAt).toLocaleDateString('tr-TR')} · {q.reviewCount} tekrar
-                </div>
+                </button>
+                {open && (
+                  <div className="mt-2 grid grid-cols-1 gap-3 sm:grid-cols-2">
+                    {items.map(q => (
+                      <QuestionListCard
+                        key={q.id}
+                        q={q}
+                        difficultyColor={difficultyColor}
+                        openReviewDialog={openReviewDialog}
+                        onRequestDelete={setIdToDelete}
+                      />
+                    ))}
+                  </div>
+                )}
               </div>
-              {(q.lastResult === 'solved' || q.lastResult === 'failed') && (
-                <div className="px-3 pb-3 text-xs text-muted-foreground border-t border-border pt-2">
-                  {q.lastResult === 'solved' ? 'Son tekrar: Çözdüm ✓' : 'Son tekrar: Çözemedim ✗'}
-                </div>
-              )}
+            );
+          })}
+          {subjectlessQuestions.length > 0 && (
+            <div
+              className={`grid grid-cols-1 gap-3 sm:grid-cols-2 ${subjectGroups.length > 0 ? 'mt-4' : ''}`}
+            >
+              {subjectlessQuestions.map(q => (
+                <QuestionListCard
+                  key={q.id}
+                  q={q}
+                  difficultyColor={difficultyColor}
+                  openReviewDialog={openReviewDialog}
+                  onRequestDelete={setIdToDelete}
+                />
+              ))}
             </div>
-          ))}
+          )}
         </div>
       )}
 
@@ -513,6 +630,68 @@ export function QuestionsPage() {
           </AlertDialogFooter>
         </AlertDialogContent>
       </AlertDialog>
+    </div>
+  );
+}
+
+function QuestionListCard({
+  q,
+  difficultyColor,
+  openReviewDialog,
+  onRequestDelete,
+}: {
+  q: QuestionWithMeta;
+  difficultyColor: Record<'easy' | 'medium' | 'hard' | 'custom', string>;
+  openReviewDialog: (id: string) => void;
+  onRequestDelete: (id: string) => void;
+}) {
+  return (
+    <div className="relative overflow-hidden rounded-xl border border-border bg-card">
+      <div className="relative">
+        <img src={q.imageUrl} alt="Soru" className="h-40 w-full object-cover" />
+        <div className="absolute right-2 top-2 flex gap-1">
+          <button
+            type="button"
+            onClick={() => openReviewDialog(q.id)}
+            className="rounded-full bg-black/50 p-1 text-white hover:bg-black/70"
+            aria-label="Tekrar zamanını ayarla"
+          >
+            <Calendar className="h-4 w-4" />
+          </button>
+          <button
+            type="button"
+            onClick={() => onRequestDelete(q.id)}
+            className="rounded-full bg-black/50 p-1 text-white hover:bg-black/70"
+            aria-label="Soruyu sil"
+          >
+            <X className="h-4 w-4" />
+          </button>
+        </div>
+      </div>
+      <div className="p-3">
+        <div className="flex items-center justify-between">
+          <span
+            className={`rounded-full px-2 py-0.5 text-xs ${difficultyColor[q.difficulty as keyof typeof difficultyColor] ?? difficultyColor.medium}`}
+          >
+            {q.difficulty === 'hard'
+              ? 'Zor'
+              : q.difficulty === 'medium'
+                ? 'Orta'
+                : q.difficulty === 'custom'
+                  ? 'Özel'
+                  : 'Kolay'}
+          </span>
+          {q.subject && <span className="text-xs text-muted-foreground">{q.subject}</span>}
+        </div>
+        <div className="mt-2 text-xs text-muted-foreground">
+          Tekrar: {new Date(q.nextReviewAt).toLocaleDateString('tr-TR')} · {q.reviewCount} tekrar
+        </div>
+      </div>
+      {(q.lastResult === 'solved' || q.lastResult === 'failed') && (
+        <div className="border-t border-border px-3 pb-3 pt-2 text-xs text-muted-foreground">
+          {q.lastResult === 'solved' ? 'Son tekrar: Çözdüm ✓' : 'Son tekrar: Çözemedim ✗'}
+        </div>
+      )}
     </div>
   );
 }
