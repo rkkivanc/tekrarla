@@ -12,7 +12,7 @@ type InvitationRow = {
 };
 
 export async function sendInvitation(req: Request, res: Response): Promise<void> {
-  if (req.user?.role !== 'teacher') {
+  if (req.user?.role !== 'teacher' && req.user?.role !== 'admin') {
     res.status(403).json({ error: 'Forbidden' });
     return;
   }
