@@ -46,12 +46,12 @@ export async function register(req: Request, res: Response): Promise<void> {
     }
 
     const emailRegex = /^[^\s@]+@[^\s@]+\.[^\s@]+$/;
-    if (!emailRegex.test(email.trim())) {
+    if (!emailRegex.test(email.trim().toLowerCase())) {
       res.status(400).json({ error: 'Geçerli bir e-posta adresi girin' });
       return;
     }
 
-    const existing = await pool.query('SELECT id FROM users WHERE email = $1', [email.trim()]);
+    const existing = await pool.query('SELECT id FROM users WHERE email = $1', [email.trim().toLowerCase()]);
     if (existing.rowCount && existing.rowCount > 0) {
       res.status(409).json({ error: 'Email already registered' });
       return;
@@ -63,7 +63,7 @@ export async function register(req: Request, res: Response): Promise<void> {
       `INSERT INTO users (name, email, password_hash, role)
        VALUES ($1, $2, $3, $4)
        RETURNING id, name, email, role`,
-      [name.trim(), email.trim(), password_hash, role]
+      [name.trim(), email.trim().toLowerCase(), password_hash, role]
     );
 
     const user = result.rows[0];
@@ -122,7 +122,7 @@ export async function login(req: Request, res: Response): Promise<void> {
       UserPublic & { password_hash: string | null }
     >(
       'SELECT id, name, email, role, password_hash FROM users WHERE email = $1',
-      [email.trim()]
+      [email.trim().toLowerCase()]
     );
 
     const row = result.rows[0];

@@ -12,6 +12,17 @@ export const authLimiter = rateLimit({
   },
 });
 
+export const changePasswordLimiter = rateLimit({
+  windowMs: 15 * 60 * 1000,
+  max: 5,
+  standardHeaders: true,
+  legacyHeaders: false,
+  validate: { xForwardedForHeader: false },
+  handler: (_req, res) => {
+    res.status(429).json({ error: 'Çok fazla deneme. Lütfen 15 dakika sonra tekrar deneyin.' });
+  },
+});
+
 export const contentLimiter = rateLimit({
   windowMs: 60 * 1000,
   max: 10,
