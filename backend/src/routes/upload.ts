@@ -109,6 +109,11 @@ router.get('/:key', async (req, res) => {
 
   const decodedKey = decodeURIComponent(key);
 
+  if (decodedKey.includes('..') || decodedKey.includes('/') || decodedKey.includes('\\')) {
+    res.status(400).json({ error: 'Invalid key' });
+    return;
+  }
+
   try {
     const client = getR2Client();
     const headOut = await client.send(

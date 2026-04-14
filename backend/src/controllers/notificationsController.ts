@@ -59,7 +59,12 @@ export async function updateNotificationTime(req: Request, res: Response): Promi
   }
 
   const notification_time = body.notification_time;
+  const timeRegex = /^([01]\d|2[0-3]):[0-5]\d$/;
   const timePart = notification_time.substring(0, 5);
+  if (!timeRegex.test(timePart)) {
+    res.status(400).json({ error: 'notification_time must be in HH:MM format' });
+    return;
+  }
 
   try {
     const result = await pool.query(`UPDATE users SET notification_time = $1::time WHERE id = $2`, [

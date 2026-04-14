@@ -40,6 +40,17 @@ export async function register(req: Request, res: Response): Promise<void> {
       return;
     }
 
+    if (password.length < 6) {
+      res.status(400).json({ error: 'Şifre en az 6 karakter olmalı' });
+      return;
+    }
+
+    const emailRegex = /^[^\s@]+@[^\s@]+\.[^\s@]+$/;
+    if (!emailRegex.test(email.trim())) {
+      res.status(400).json({ error: 'Geçerli bir e-posta adresi girin' });
+      return;
+    }
+
     const existing = await pool.query('SELECT id FROM users WHERE email = $1', [email.trim()]);
     if (existing.rowCount && existing.rowCount > 0) {
       res.status(409).json({ error: 'Email already registered' });
