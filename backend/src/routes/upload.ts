@@ -1,3 +1,4 @@
+import path from 'node:path';
 import { Router } from 'express';
 import multer from 'multer';
 import { GetObjectCommand, HeadObjectCommand, S3Client } from '@aws-sdk/client-s3';
@@ -74,14 +75,18 @@ function parseBytesRange(rangeHeader: string | undefined, fileSize: number): Ran
   return { start, end: clampedEnd };
 }
 
+const allowedExtensions = ['.jpg', '.jpeg', '.png', '.gif', '.webp', '.mp3', '.wav', '.ogg', '.webm', '.m4a'];
+
 const upload = multer({
   storage: multer.memoryStorage(),
-  limits: { fileSize: 10 * 1024 * 1024 },
+  limits: { fileSize: 5 * 1024 * 1024 },
   fileFilter: (_req, file, cb) => {
-    const ok =
+    const ext = path.extname(file.originalname).toLowerCase();
+    const okMime =
       typeof file.mimetype === 'string' &&
       (file.mimetype.startsWith('image/') || file.mimetype.startsWith('audio/'));
-    if (ok) {
+    const okExt = allowedExtensions.includes(ext);
+    if (okMime && okExt) {
       cb(null, true);
       return;
     }
@@ -201,7 +206,7 @@ router.get('/:key', async (req, res) => {
 router.post('/', requireAuth, (req, res, next) => {
   upload.single('file')(req, res, err => {
     if (err) {
-      res.status(400).json({ error: err instanceof Error ? err.message : 'Upload rejected' });
+      res.status(400).json({ error: 'Upload rejected' });
       return;
     }
     next();

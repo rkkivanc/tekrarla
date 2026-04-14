@@ -24,20 +24,19 @@ export async function register(req: Request, res: Response): Promise<void> {
       name?: unknown;
       email?: unknown;
       password?: unknown;
-      role?: unknown;
     };
-    const { name, email, password, role } = body;
+    const { name, email, password } = body;
+    const role = 'student';
 
     if (
       typeof name !== 'string' ||
       typeof email !== 'string' ||
       typeof password !== 'string' ||
-      typeof role !== 'string' ||
       !name.trim() ||
       !email.trim() ||
       !password
     ) {
-      res.status(400).json({ error: 'name, email, password, and role are required' });
+      res.status(400).json({ error: 'name, email, and password are required' });
       return;
     }
 

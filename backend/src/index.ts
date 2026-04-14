@@ -1,5 +1,6 @@
 import 'dotenv/config';
 import cors from 'cors';
+import helmet from 'helmet';
 import cron from 'node-cron';
 import express from 'express';
 import { pool } from './db.js';
@@ -21,16 +22,22 @@ const app = express();
 app.set('trust proxy', 1);
 const port = process.env.PORT ? Number(process.env.PORT) : 3000;
 
+const allowedOrigins = [
+  'https://tekrarla.pages.dev',
+  'https://tekrarla.app',
+  'https://www.tekrarla.app',
+];
+
+if (process.env.NODE_ENV !== 'production') {
+  allowedOrigins.push('http://localhost:5173');
+}
+
+app.use(helmet());
 app.use(cors({
-  origin: [
-    'http://localhost:5173',
-    'https://tekrarla.pages.dev',
-    'https://tekrarla.app',
-    'https://www.tekrarla.app'
-  ],
+  origin: allowedOrigins,
   credentials: true
 }));
-app.use(express.json());
+app.use(express.json({ limit: '1mb' }));
 
 app.get('/', (_req, res) => {
   res.send('Hello from Tekrarla API');
@@ -42,13 +49,13 @@ app.post('/api/voice-notes', contentLimiter);
 app.post('/api/upload', contentLimiter);
 
 app.use('/api/auth', authLimiter, authRouter);
-app.use('/api/questions', questionsRouter);
+app.use('/api/questions', requireAuth, questionsRouter);
 app.use('/api/subjects', requireAuth, subjectsRouter);
-app.use('/api/settings', settingsRouter);
+app.use('/api/settings', requireAuth, settingsRouter);
 app.use('/api/upload', uploadRouter);
-app.use('/api/topics', topicsRouter);
-app.use('/api/voice-notes', voiceNotesRouter);
-app.use('/api/invitations', invitationsRouter);
+app.use('/api/topics', requireAuth, topicsRouter);
+app.use('/api/voice-notes', requireAuth, voiceNotesRouter);
+app.use('/api/invitations', requireAuth, invitationsRouter);
 app.use('/api/notifications', notificationsRouter);
 app.use('/api/admin', requireAuth, requireAdmin, adminRouter);
 
