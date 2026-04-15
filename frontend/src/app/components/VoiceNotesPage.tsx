@@ -47,6 +47,7 @@ export function VoiceNotesPage() {
   const [, bumpAudioUi] = useReducer((x: number) => x + 1, 0);
 
   const mediaRecorderRef = useRef<MediaRecorder | null>(null);
+  const recordedMimeTypeRef = useRef<string>('audio/webm');
   const chunksRef = useRef<Blob[]>([]);
   const timerRef = useRef<number | null>(null);
   const audioMapRef = useRef<Map<string, HTMLAudioElement>>(new Map());
@@ -82,7 +83,17 @@ export function VoiceNotesPage() {
   const startRecording = async () => {
     try {
       const stream = await navigator.mediaDevices.getUserMedia({ audio: true });
-      const mediaRecorder = new MediaRecorder(stream);
+      const mimeType = MediaRecorder.isTypeSupported('audio/webm;codecs=opus')
+        ? 'audio/webm;codecs=opus'
+        : MediaRecorder.isTypeSupported('audio/webm')
+          ? 'audio/webm'
+          : MediaRecorder.isTypeSupported('audio/mp4')
+            ? 'audio/mp4'
+            : '';
+
+      const mediaRecorder = mimeType
+        ? new MediaRecorder(stream, { mimeType })
+        : new MediaRecorder(stream);
       mediaRecorderRef.current = mediaRecorder;
       chunksRef.current = [];
 
@@ -91,7 +102,9 @@ export function VoiceNotesPage() {
       };
 
       mediaRecorder.onstop = () => {
-        const blob = new Blob(chunksRef.current, { type: 'audio/webm' });
+        const actualMimeType = mediaRecorder.mimeType || 'audio/webm';
+        recordedMimeTypeRef.current = actualMimeType;
+        const blob = new Blob(chunksRef.current, { type: actualMimeType });
         const url = URL.createObjectURL(blob);
         setRecordedUrl(url);
         stream.getTracks().forEach(t => t.stop());
@@ -120,9 +133,10 @@ export function VoiceNotesPage() {
     try {
       const res = await fetch(recordedUrl);
       const blob = await res.blob();
-      const webmBlob = blob.type === 'audio/webm' ? blob : new Blob([blob], { type: 'audio/webm' });
+      const actualMimeType = blob.type || recordedMimeTypeRef.current;
+      const extension = actualMimeType.includes('mp4') ? '.m4a' : '.webm';
       const formData = new FormData();
-      formData.append('file', webmBlob, 'recording.webm');
+      formData.append('file', blob, `recording${extension}`);
 
       const { data: uploadData } = await api.post<{ url: string }>('/upload', formData);
 
