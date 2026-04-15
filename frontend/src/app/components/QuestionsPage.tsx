@@ -107,6 +107,7 @@ export function QuestionsPage() {
   const editQGalleryRef = useRef<HTMLInputElement>(null);
   const editACameraRef = useRef<HTMLInputElement>(null);
   const editAGalleryRef = useRef<HTMLInputElement>(null);
+  const [zoomUrl, setZoomUrl] = useState<string | null>(null);
 
   const refreshQuestions = useCallback(async () => {
     try {
@@ -375,6 +376,20 @@ export function QuestionsPage() {
 
   return (
     <div className="space-y-4 pb-20 md:pb-0">
+      {zoomUrl && (
+        <div
+          className="fixed inset-0 z-[100] flex items-center justify-center bg-black/90 p-4"
+          onClick={() => setZoomUrl(null)}
+          role="presentation"
+        >
+          <img
+            src={zoomUrl}
+            alt=""
+            className="max-h-full max-w-full object-contain"
+            onClick={e => e.stopPropagation()}
+          />
+        </div>
+      )}
       <div className="flex items-center justify-between">
         <h1>Sorularım</h1>
         <button onClick={() => setShowForm(!showForm)} className="flex items-center gap-2 px-4 py-2 rounded-lg bg-primary text-primary-foreground">
@@ -635,6 +650,7 @@ export function QuestionsPage() {
                         openReviewDialog={openReviewDialog}
                         onRequestDelete={setIdToDelete}
                         onOpenEdit={setEditingQuestion}
+                        onImageZoom={setZoomUrl}
                       />
                     ))}
                   </div>
@@ -654,6 +670,7 @@ export function QuestionsPage() {
                   openReviewDialog={openReviewDialog}
                   onRequestDelete={setIdToDelete}
                   onOpenEdit={setEditingQuestion}
+                  onImageZoom={setZoomUrl}
                 />
               ))}
             </div>
@@ -676,7 +693,12 @@ export function QuestionsPage() {
               <label className="text-sm text-muted-foreground mb-1 block">Soru Fotoğrafı *</label>
               {editImg ? (
                 <div className="relative">
-                  <img src={editImg} alt="Soru" className="w-full max-h-64 object-contain rounded-lg border border-border" />
+                  <img
+                    src={editImg}
+                    alt="Soru"
+                    className="w-full max-h-64 cursor-zoom-in object-contain rounded-lg border border-border"
+                    onClick={() => setZoomUrl(editImg)}
+                  />
                   <button
                     type="button"
                     onClick={() => setEditImg('')}
@@ -829,7 +851,12 @@ export function QuestionsPage() {
                 <label className="text-sm text-muted-foreground mb-1 block">Cevap Fotoğrafı *</label>
                 {editAnswerImg ? (
                   <div className="relative">
-                    <img src={editAnswerImg} alt="Cevap" className="w-full max-h-64 object-contain rounded-lg border border-border" />
+                    <img
+                      src={editAnswerImg}
+                      alt="Cevap"
+                      className="w-full max-h-64 cursor-zoom-in object-contain rounded-lg border border-border"
+                      onClick={() => setZoomUrl(editAnswerImg)}
+                    />
                     <button
                       type="button"
                       onClick={() => setEditAnswerImg('')}
@@ -965,17 +992,24 @@ function QuestionListCard({
   openReviewDialog,
   onRequestDelete,
   onOpenEdit,
+  onImageZoom,
 }: {
   q: QuestionWithMeta;
   difficultyColor: Record<'easy' | 'medium' | 'hard' | 'custom', string>;
   openReviewDialog: (id: string) => void;
   onRequestDelete: (id: string) => void;
   onOpenEdit: (question: QuestionWithMeta) => void;
+  onImageZoom: (url: string) => void;
 }) {
   return (
     <div className="relative overflow-hidden rounded-xl border border-border bg-card">
       <div className="relative">
-        <img src={q.imageUrl} alt="Soru" className="h-40 w-full object-cover" />
+        <img
+          src={q.imageUrl}
+          alt="Soru"
+          className="h-40 w-full cursor-zoom-in object-cover"
+          onClick={() => onImageZoom(q.imageUrl)}
+        />
         <div className="absolute right-2 top-2 flex gap-1">
           <button
             type="button"

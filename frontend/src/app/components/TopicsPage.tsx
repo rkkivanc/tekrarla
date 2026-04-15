@@ -90,6 +90,7 @@ export function TopicsPage() {
   const editSubjectComboRef = useRef<HTMLDivElement>(null);
   const editFileCameraRef = useRef<HTMLInputElement>(null);
   const editFileGalleryRef = useRef<HTMLInputElement>(null);
+  const [zoomUrl, setZoomUrl] = useState<string | null>(null);
 
   useEffect(() => {
     let cancelled = false;
@@ -310,6 +311,20 @@ export function TopicsPage() {
 
   return (
     <div className="space-y-4 pb-20 md:pb-0">
+      {zoomUrl && (
+        <div
+          className="fixed inset-0 z-[100] flex items-center justify-center bg-black/90 p-4"
+          onClick={() => setZoomUrl(null)}
+          role="presentation"
+        >
+          <img
+            src={zoomUrl}
+            alt=""
+            className="max-h-full max-w-full object-contain"
+            onClick={e => e.stopPropagation()}
+          />
+        </div>
+      )}
       <div className="flex items-center justify-between">
         <h1>Konu Notları</h1>
         <button onClick={() => setShowForm(!showForm)} className="flex items-center gap-2 px-4 py-2 rounded-lg bg-primary text-primary-foreground">
@@ -483,6 +498,7 @@ export function TopicsPage() {
                         openTopicReviewDialog={openTopicReviewDialog}
                         onRequestDelete={setIdToDelete}
                         onOpenEdit={setEditingTopic}
+                        onImageZoom={setZoomUrl}
                       />
                     ))}
                   </div>
@@ -501,6 +517,7 @@ export function TopicsPage() {
                   openTopicReviewDialog={openTopicReviewDialog}
                   onRequestDelete={setIdToDelete}
                   onOpenEdit={setEditingTopic}
+                  onImageZoom={setZoomUrl}
                 />
               ))}
             </div>
@@ -580,7 +597,12 @@ export function TopicsPage() {
               <label className="text-sm text-muted-foreground mb-1 block">Fotoğraf</label>
               {editImageUrl ? (
                 <div className="relative">
-                  <img src={editImageUrl} alt="Not" className="w-full max-h-48 object-contain rounded-lg border border-border" />
+                  <img
+                    src={editImageUrl}
+                    alt="Not"
+                    className="w-full max-h-48 cursor-zoom-in object-contain rounded-lg border border-border"
+                    onClick={() => setZoomUrl(editImageUrl)}
+                  />
                   <button
                     type="button"
                     onClick={() => setEditImageUrl('')}
@@ -716,6 +738,7 @@ function TopicAccordionCard({
   openTopicReviewDialog,
   onRequestDelete,
   onOpenEdit,
+  onImageZoom,
 }: {
   t: TopicWithMeta;
   expandedId: string | null;
@@ -723,6 +746,7 @@ function TopicAccordionCard({
   openTopicReviewDialog: (id: string) => void;
   onRequestDelete: (id: string) => void;
   onOpenEdit: (topic: TopicWithMeta) => void;
+  onImageZoom: (url: string) => void;
 }) {
   return (
     <div className="overflow-hidden rounded-xl border border-border bg-card">
@@ -762,7 +786,14 @@ function TopicAccordionCard({
       {expandedId === t.id && (
         <div className="border-t border-border px-4 pb-4 pt-3">
           <p className="whitespace-pre-wrap text-muted-foreground">{t.notes}</p>
-          {t.imageUrl && <img src={t.imageUrl} alt="Not" className="mt-3 max-h-48 rounded-lg object-contain" />}
+          {t.imageUrl && (
+            <img
+              src={t.imageUrl}
+              alt="Not"
+              className="mt-3 max-h-48 cursor-zoom-in rounded-lg object-contain"
+              onClick={() => onImageZoom(t.imageUrl!)}
+            />
+          )}
           <div className="mt-3 flex items-center gap-3">
             <button
               type="button"
