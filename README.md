@@ -83,7 +83,3 @@ cp .env.example .env  # fill in VITE_API_URL and VITE_TURNSTILE_SITE_KEY
 npm install
 npm run dev
 ```
-
-## License
-
-This project is for personal use and portfolio purposes.
