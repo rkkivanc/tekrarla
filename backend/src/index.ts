@@ -32,7 +32,7 @@ if (process.env.NODE_ENV !== 'production') {
   allowedOrigins.push('http://localhost:5173');
 }
 
-app.use(helmet());
+app.use(helmet({ contentSecurityPolicy: false, crossOriginResourcePolicy: { policy: 'cross-origin' }, crossOriginOpenerPolicy: false }));
 app.use(cors({
   origin: allowedOrigins,
   credentials: true
